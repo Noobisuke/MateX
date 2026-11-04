@@ -2,6 +2,7 @@
 #include "board/fen.hpp"
 #include "board/attacks.hpp"
 #include "move/movegen.hpp"
+#include "move/legal.hpp"
 #include <iostream>
 
 int main(int argc, char** argv) {
@@ -42,7 +43,16 @@ int main(int argc, char** argv) {
         if (i % 12 == 0) std::cout << "\n  ";
         std::cout << moves[i].toString() << ' ';
     }
-    std::cout << "\n(pseudo-legal: may include moves that leave the king in check; Stage 5 filters those)\n";
+    std::cout << "\n(pseudo-legal: may include moves that leave the king in check)\n";
+
+    MoveList legal;
+    generateLegalMoves(pos, legal);
+    std::cout << "\nLegal moves (" << legal.size() << "):";
+    for (size_t i = 0; i < legal.size(); ++i) {
+        if (i % 12 == 0) std::cout << "\n  ";
+        std::cout << legal[i].toString() << ' ';
+    }
+    std::cout << "\n(castling out of check / through attacked squares is still allowed until Stage 6)\n";
 
     return 0;
 }

@@ -19,6 +19,7 @@ set(ENGINE_SOURCES
     src/board/attacks.cpp
     src/move/move.cpp
     src/move/movegen.cpp
+    src/move/legal.cpp
 )
 
 # --- Main executable (manual/visual inspection) -----------------------------
@@ -29,9 +30,11 @@ add_executable(test_stage1 tests/test_stage1.cpp ${ENGINE_SOURCES})
 add_executable(test_stage2 tests/test_stage2.cpp ${ENGINE_SOURCES})
 add_executable(test_stage3 tests/test_stage3.cpp ${ENGINE_SOURCES})
 add_executable(test_stage4 tests/test_stage4.cpp ${ENGINE_SOURCES})
+add_executable(test_stage5 tests/test_stage5.cpp ${ENGINE_SOURCES})
 
 enable_testing()
 add_test(NAME Stage1Tests COMMAND test_stage1)
 add_test(NAME Stage2Tests COMMAND test_stage2)
 add_test(NAME Stage3Tests COMMAND test_stage3)
 add_test(NAME Stage4Tests COMMAND test_stage4)
+add_test(NAME Stage5Tests COMMAND test_stage5)
