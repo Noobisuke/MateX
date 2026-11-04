@@ -1,0 +1,7 @@
+# Normalize line endings so Windows (CRLF) and Linux/Mac (LF) don't create noisy diffs
+* text=auto
+*.cpp text
+*.hpp text
+*.md text
+*.txt text
+CMakeLists.txt text
