@@ -238,11 +238,10 @@ void testCastlingLandingSquareFiltered() {
 }
 
 void testStage6GapDocumented() {
-    // KNOWN GAP (Stage 6): castling out of check is not yet rejected, because the
-    // king's landing square (g1) is not attacked. When Stage 6 lands, FLIP this
-    // CHECK to !has(...).
+    // Was a documented Stage 5 gap; fixed in Stage 6: castling out of check is rejected
+    // even though the landing square (g1) is not attacked.
     MoveList m = legalOf(fromFEN("4r1k1/8/8/8/8/8/8/R3K2R w KQ - 0 1"));
-    CHECK(has(m, "e1g1"), "[Stage 6 TODO] castling out of check still generated; flip in Stage 6");
+    CHECK(!has(m, "e1g1") && !has(m, "e1c1"), "castling out of check is illegal (Stage 6)");
 }
 
 // --- Early depth-1 perft cross-check (standard perft positions) ------------------------------------

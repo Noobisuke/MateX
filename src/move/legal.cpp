@@ -1,6 +1,7 @@
 #include "legal.hpp"
 #include "movegen.hpp"
 #include "../board/attacks.hpp"
+#include "../rules/special.hpp"
 
 namespace {
 
@@ -41,6 +42,9 @@ void applyPlacement(Position& p, const Move& m, Color mover) {
 }  // namespace
 
 bool leavesKingSafe(const Position& pos, const Move& move) {
+    // Stage 6: castling additionally may not start in check or cross an attacked square.
+    if (move.isCastle() && !castlingPathSafe(pos, move)) return false;
+
     const Color mover = pos.sideToMove();
     Position scratch = pos;  // copy-make: Position is a few hundred bytes
     applyPlacement(scratch, move, mover);

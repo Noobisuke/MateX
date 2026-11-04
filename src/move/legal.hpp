@@ -16,9 +16,9 @@
 // onto attacked squares (including "behind" the king on a slider's ray),
 // blocking/capturing a checker, and the en passant discovered check.
 //
-// Stage 6 boundary: castling is only checked for the king's LANDING
-// square here. "King currently in check" and "king crosses an attacked
-// square" are Stage 6 rules and are NOT yet enforced.
+// Castling (Stage 6): castling moves must additionally pass
+// castlingPathSafe() (rules/special.hpp): king not in check and not
+// crossing or landing on an attacked square.
 // ---------------------------------------------------------------------
 
 // Would playing `move` (assumed pseudo-legal for pos.sideToMove()) leave
