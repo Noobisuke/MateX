@@ -3,6 +3,8 @@
 #include "board/attacks.hpp"
 #include "move/movegen.hpp"
 #include "move/legal.hpp"
+#include "rules/validate.hpp"
+#include "rules/gamestate.hpp"
 #include <iostream>
 
 int main(int argc, char** argv) {
@@ -17,7 +19,7 @@ int main(int argc, char** argv) {
         for (int i = 2; i < argc; ++i) { fen += ' '; fen += argv[i]; }
 
         std::string err;
-        if (!loadFEN(pos, fen, &err)) {
+        if (!loadFEN(pos, fen, &err) || !validatePosition(pos, &err)) {
             std::cout << "Failed to load FEN: " << err << "\n";
             return 1;
         }
@@ -35,6 +37,10 @@ int main(int argc, char** argv) {
 
     std::cout << "White in check: " << (isInCheck(pos, WHITE) ? "yes" : "no") << "\n";
     std::cout << "Black in check: " << (isInCheck(pos, BLACK) ? "yes" : "no") << "\n";
+
+    GameHistory history;
+    history.reset(pos);
+    std::cout << "Game status: " << toString(evaluateGameStatus(pos, history).result) << "\n";
 
     MoveList moves;
     generatePseudoLegalMoves(pos, moves);

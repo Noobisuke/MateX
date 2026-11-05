@@ -31,6 +31,20 @@ bool castlingPathSafe(const Position& pos, const Move& move) {
     return true;
 }
 
+CastlingRights effectiveCastlingRights(const Position& pos) {
+    const CastlingRights stored = pos.castlingRights();
+    int out = 0;
+    if ((stored & WHITE_KINGSIDE) && pos.pieceOn(E1) == WHITE_KING && pos.pieceOn(H1) == WHITE_ROOK)
+        out |= WHITE_KINGSIDE;
+    if ((stored & WHITE_QUEENSIDE) && pos.pieceOn(E1) == WHITE_KING && pos.pieceOn(A1) == WHITE_ROOK)
+        out |= WHITE_QUEENSIDE;
+    if ((stored & BLACK_KINGSIDE) && pos.pieceOn(E8) == BLACK_KING && pos.pieceOn(H8) == BLACK_ROOK)
+        out |= BLACK_KINGSIDE;
+    if ((stored & BLACK_QUEENSIDE) && pos.pieceOn(E8) == BLACK_KING && pos.pieceOn(A8) == BLACK_ROOK)
+        out |= BLACK_QUEENSIDE;
+    return static_cast<CastlingRights>(out);
+}
+
 CastlingRights castlingRightsAfter(CastlingRights rights, const Move& move) {
     const int lost = rightsLostAt(move.from) | rightsLostAt(move.to);
     return static_cast<CastlingRights>(rights & ~lost);

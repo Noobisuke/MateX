@@ -27,6 +27,12 @@ bool castlingPathSafe(const Position& pos, const Move& move);
 // Rights are tracked explicitly, never inferred from piece placement.
 CastlingRights castlingRightsAfter(CastlingRights rights, const Move& move);
 
+// Castling rights that can really still be exercised structurally: the stored right AND the
+// king on e1/e8 AND the rook on its corner. Stored rights may be stale for positions loaded
+// from a hand-written FEN. Used for repetition (Stage 8); temporary obstacles (pieces in the
+// way, attacked squares) do NOT remove a right here, matching the FIDE definition.
+CastlingRights effectiveCastlingRights(const Position& pos);
+
 // En passant target square after `move`: the skipped square for a double
 // pawn push, NO_SQUARE for every other move. Set after EVERY double push
 // (FEN-specification convention), whether or not a capture is possible.

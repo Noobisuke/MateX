@@ -1,64 +1,52 @@
 #include "legal.hpp"
 #include "movegen.hpp"
+#include "makemove.hpp"
 #include "../board/attacks.hpp"
 #include "../rules/special.hpp"
 
 namespace {
 
-// Applies only the PIECE PLACEMENT effect of `m` to `p` (a scratch copy).
-// Side to move, castling rights, en passant square and clocks are left
-// alone: none of them influence whether a king is attacked, and updating
-// them correctly is the job of the real make/unmake in Stage 7.
-void applyPlacement(Position& p, const Move& m, Color mover) {
-    const int from = m.from;
-    const int to = m.to;
+// Is `move` safe to play on `work`? `work` is restored before returning, so it
+// may be reused for the next move. Make/unmake replaces the per-move copy
+// used in Stages 5-6.
+bool leavesKingSafeInPlace(Position& work, const Move& move) {
+    // Castling additionally may not start in check or cross an attacked square.
+    if (move.isCastle() && !castlingPathSafe(work, move)) return false;
 
-    p.removePiece(from);
-
-    if (m.flag == EN_PASSANT) {
-        // The captured pawn is not on `to`; it sits one rank behind it
-        // (from the mover's point of view).
-        const int capturedSq = (mover == WHITE) ? to - 8 : to + 8;
-        p.removePiece(capturedSq);
-    }
-
-    if (m.isPromotion()) {
-        p.putPiece(makePiece(mover, m.promotion), to);  // putPiece overwrites a captured piece
-    } else {
-        p.putPiece(m.piece, to);
-    }
-
-    if (m.flag == CASTLE_KINGSIDE) {
-        const int rank = (mover == WHITE) ? 0 : 7;
-        p.removePiece(squareOf(7, rank));
-        p.putPiece(makePiece(mover, ROOK), squareOf(5, rank));
-    } else if (m.flag == CASTLE_QUEENSIDE) {
-        const int rank = (mover == WHITE) ? 0 : 7;
-        p.removePiece(squareOf(0, rank));
-        p.putPiece(makePiece(mover, ROOK), squareOf(3, rank));
-    }
+    const Color mover = work.sideToMove();
+    const UndoInfo undo = makeMove(work, move);
+    const bool safe = !isInCheck(work, mover);
+    unmakeMove(work, move, undo);
+    return safe;
 }
 
 }  // namespace
 
 bool leavesKingSafe(const Position& pos, const Move& move) {
-    // Stage 6: castling additionally may not start in check or cross an attacked square.
-    if (move.isCastle() && !castlingPathSafe(pos, move)) return false;
-
-    const Color mover = pos.sideToMove();
-    Position scratch = pos;  // copy-make: Position is a few hundred bytes
-    applyPlacement(scratch, move, mover);
-    return !isInCheck(scratch, mover);
+    Position work = pos;
+    return leavesKingSafeInPlace(work, move);
 }
 
 void generateLegalMoves(const Position& pos, MoveList& moves) {
     MoveList pseudo;
     generatePseudoLegalMoves(pos, pseudo);
+
+    Position work = pos;  // one scratch copy per call; make/unmake keeps it pristine
     for (size_t i = 0; i < pseudo.size(); ++i) {
-        if (leavesKingSafe(pos, pseudo[i])) {
+        if (leavesKingSafeInPlace(work, pseudo[i])) {
             moves.push(pseudo[i]);
         }
     }
+}
+
+bool hasLegalMove(const Position& pos) {
+    MoveList pseudo;
+    generatePseudoLegalMoves(pos, pseudo);
+    Position work = pos;
+    for (size_t i = 0; i < pseudo.size(); ++i) {
+        if (leavesKingSafeInPlace(work, pseudo[i])) return true;
+    }
+    return false;
 }
 
 bool isLegalMove(const Position& pos, const Move& move) {

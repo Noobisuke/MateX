@@ -28,6 +28,10 @@ bool leavesKingSafe(const Position& pos, const Move& move);
 // Generates every legal move for the side to move, appending to `moves`.
 void generateLegalMoves(const Position& pos, MoveList& moves);
 
+// True if the side to move has at least one legal move (stops at the first one found;
+// cheaper than generateLegalMoves when only mate/stalemate matters).
+bool hasLegalMove(const Position& pos);
+
 // True if `move` is in the legal move list of `pos` (compares from, to,
 // promotion and flag, same as Move::operator==).
 bool isLegalMove(const Position& pos, const Move& move);

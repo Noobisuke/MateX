@@ -19,12 +19,19 @@ set(ENGINE_SOURCES
     src/board/attacks.cpp
     src/move/move.cpp
     src/move/movegen.cpp
+    src/move/makemove.cpp
     src/move/legal.cpp
     src/rules/special.cpp
+    src/rules/validate.cpp
+    src/rules/repetition.cpp
+    src/rules/gamestate.cpp
 )
 
 # --- Main executable (manual/visual inspection) -----------------------------
 add_executable(chess_engine src/main.cpp ${ENGINE_SOURCES})
+
+# --- Interactive move-playing tool (manual checking)
+add_executable(play tools/play.cpp ${ENGINE_SOURCES})
 
 # --- Test executables --------------------------------------------------------
 add_executable(test_stage1 tests/test_stage1.cpp ${ENGINE_SOURCES})
@@ -33,6 +40,9 @@ add_executable(test_stage3 tests/test_stage3.cpp ${ENGINE_SOURCES})
 add_executable(test_stage4 tests/test_stage4.cpp ${ENGINE_SOURCES})
 add_executable(test_stage5 tests/test_stage5.cpp ${ENGINE_SOURCES})
 add_executable(test_stage6 tests/test_stage6.cpp ${ENGINE_SOURCES})
+add_executable(test_stage7 tests/test_stage7.cpp ${ENGINE_SOURCES})
+add_executable(test_stage8 tests/test_stage8.cpp ${ENGINE_SOURCES})
+add_executable(test_regression tests/test_regression.cpp ${ENGINE_SOURCES})
 
 enable_testing()
 add_test(NAME Stage1Tests COMMAND test_stage1)
@@ -41,3 +51,6 @@ add_test(NAME Stage3Tests COMMAND test_stage3)
 add_test(NAME Stage4Tests COMMAND test_stage4)
 add_test(NAME Stage5Tests COMMAND test_stage5)
 add_test(NAME Stage6Tests COMMAND test_stage6)
+add_test(NAME Stage7Tests COMMAND test_stage7)
+add_test(NAME Stage8Tests COMMAND test_stage8)
+add_test(NAME RegressionTests COMMAND test_regression)

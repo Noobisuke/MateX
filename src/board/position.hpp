@@ -15,23 +15,11 @@
 //   - halfmove clock (for 50-move rule)
 //   - fullmove number
 //
-// Design note: we store piece placement TWICE, in two different
-// representations:
-//
-//   1. pieceBB[12]      - one bitboard per (color, piece type), plus
-//      occupancy[2]        derived "all white / all black / all
-//      occupancyAll         pieces" bitboards.
-//
-//   2. board[64]        - a plain mailbox array: board[sq] tells you
-//                          directly which Piece (or NO_PIECE) sits on
-//                          a square, in O(1), no bit-scanning needed.
-//
-// This costs a small amount of redundancy but pays off constantly:
-// bitboards are what move generation, attack detection, and
-// evaluation want; the mailbox is what "what's on e4?" and debug
-// printing want. We keep them in sync any time the position changes,
-// and Stage 1 includes a consistency check to make sure they never
-// drift apart.
+// Piece placement is stored TWICE, in two representations:
+//   1. pieceBB_[12] + occupancy bitboards (what move generation,
+//      attack detection and evaluation want)
+//   2. board_[64] mailbox (what "what's on e4?" and printing want)
+// Both are updated together; isConsistent() verifies they agree.
 // ---------------------------------------------------------------------
 
 class Position {
@@ -42,23 +30,21 @@ public:
     void setStartingPosition();
 
     // Clears everything to an empty board (no pieces, white to move,
-    // no castling rights, no en passant, clocks at 0).
+    // no castling rights, no en passant, clocks at 0/1).
     void clear();
 
-    // --- Piece placement queries -------------------------------------------------
+    // --- Piece placement queries ---
     Piece pieceOn(int sq) const { return board_[sq]; }
     Bitboard pieces(Color c, PieceType pt) const { return pieceBB_[makePiece(c, pt)]; }
     Bitboard pieces(Piece p) const { return pieceBB_[p]; }
     Bitboard occupancy(Color c) const { return occupancyByColor_[c]; }
     Bitboard occupancyAll() const { return occupancyAll_; }
 
-    // --- Piece placement mutation -------------------------------------------------
-    // Low-level primitives. Stage 1 only needs to set up a position;
-    // make/unmake move logic (Stage 5) will build on these.
+    // --- Piece placement mutation ---
     void putPiece(Piece p, int sq);
     void removePiece(int sq);
 
-    // --- State accessors -----------------------------------------------------------
+    // --- State accessors ---
     Color sideToMove() const { return sideToMove_; }
     void setSideToMove(Color c) { sideToMove_ = c; }
 
@@ -74,20 +60,18 @@ public:
     int fullmoveNumber() const { return fullmoveNumber_; }
     void setFullmoveNumber(int fm) { fullmoveNumber_ = fm; }
 
-    // --- Debugging -------------------------------------------------------------
-    // Human-readable 8x8 board, e.g. for printing to console.
-    std::string toString() const;
+    // Exact equality of every field (placement, side, rights, ep, clocks).
+    // Used by tests to prove make/unmake restores the previous position.
+    bool operator==(const Position&) const = default;
 
-    // Verifies that pieceBB_/occupancy_* and board_ describe the exact
-    // same position. Returns true if consistent. Used by tests.
+    // --- Debugging ---
+    std::string toString() const;
     bool isConsistent() const;
 
 private:
-    void recomputeOccupancy();
-
-    std::array<Piece, 64> board_;       // mailbox: square -> piece
-    std::array<Bitboard, 12> pieceBB_;  // indexed by Piece (0-11)
-    std::array<Bitboard, 2> occupancyByColor_; // indexed by Color
+    std::array<Piece, 64> board_;
+    std::array<Bitboard, 12> pieceBB_;
+    std::array<Bitboard, 2> occupancyByColor_;
     Bitboard occupancyAll_;
 
     Color sideToMove_;

@@ -19,14 +19,22 @@ void Position::clear() {
 }
 
 void Position::putPiece(Piece p, int sq) {
+    // NO_PIECE (12) is not a valid index into pieceBB_/occupancyByColor_; placing "no piece"
+    // means emptying the square. (Audit fix: this used to write out of bounds.)
+    if (p == NO_PIECE) {
+        removePiece(sq);
+        return;
+    }
     // Defensive: if a piece already sits here, remove it first so the
-    // bitboards/mailbox never get out of sync (e.g. accidental double-set).
+    // bitboards/mailbox never get out of sync.
     if (board_[sq] != NO_PIECE) {
         removePiece(sq);
     }
     board_[sq] = p;
     setBit(pieceBB_[p], sq);
-    recomputeOccupancy();
+    // Incremental occupancy update (Stage 7): touch one bit instead of rebuilding.
+    setBit(occupancyByColor_[colorOf(p)], sq);
+    setBit(occupancyAll_, sq);
 }
 
 void Position::removePiece(int sq) {
@@ -34,32 +42,22 @@ void Position::removePiece(int sq) {
     if (p == NO_PIECE) return;
     board_[sq] = NO_PIECE;
     clearBit(pieceBB_[p], sq);
-    recomputeOccupancy();
-}
-
-void Position::recomputeOccupancy() {
-    occupancyByColor_[WHITE] = EMPTY_BB;
-    occupancyByColor_[BLACK] = EMPTY_BB;
-    for (int p = WHITE_PAWN; p <= WHITE_KING; ++p)
-        occupancyByColor_[WHITE] |= pieceBB_[p];
-    for (int p = BLACK_PAWN; p <= BLACK_KING; ++p)
-        occupancyByColor_[BLACK] |= pieceBB_[p];
-    occupancyAll_ = occupancyByColor_[WHITE] | occupancyByColor_[BLACK];
+    clearBit(occupancyByColor_[colorOf(p)], sq);
+    clearBit(occupancyAll_, sq);
 }
 
 void Position::setStartingPosition() {
     clear();
 
-    // Back ranks
     const PieceType backRank[8] = {
         ROOK, KNIGHT, BISHOP, QUEEN, KING, BISHOP, KNIGHT, ROOK
     };
 
     for (int file = 0; file < 8; ++file) {
-        putPiece(makePiece(WHITE, backRank[file]), squareOf(file, 0)); // rank 1
-        putPiece(makePiece(WHITE, PAWN),           squareOf(file, 1)); // rank 2
-        putPiece(makePiece(BLACK, PAWN),           squareOf(file, 6)); // rank 7
-        putPiece(makePiece(BLACK, backRank[file]), squareOf(file, 7)); // rank 8
+        putPiece(makePiece(WHITE, backRank[file]), squareOf(file, 0));
+        putPiece(makePiece(WHITE, PAWN),           squareOf(file, 1));
+        putPiece(makePiece(BLACK, PAWN),           squareOf(file, 6));
+        putPiece(makePiece(BLACK, backRank[file]), squareOf(file, 7));
     }
 
     sideToMove_ = WHITE;
@@ -103,8 +101,6 @@ std::string Position::toString() const {
 }
 
 bool Position::isConsistent() const {
-    // Rebuild what the bitboards SHOULD be, purely from the mailbox,
-    // and compare against what's actually stored.
     std::array<Bitboard, 12> expectedBB{};
     expectedBB.fill(EMPTY_BB);
 
