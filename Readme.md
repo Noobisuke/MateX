@@ -92,3 +92,9 @@ docs/      roadmap prompt, rule checklist
 - `makeMove` returns a small `UndoInfo` that the caller keeps; `unmakeMove` restores the exact position.
 - Game history (for repetition) is separate from the per-move undo information.
 - `loadFEN` checks syntax only; call `validatePosition` on any position that comes from outside.
+
+## Stage 10: Basic evaluation
+
+`src/eval/evaluate.*` scores a position in centipawns from the side to move's view
+(material, piece-square tables, pawn structure, bishop pair, mobility, king shield).
+In `play`, type `eval` to see the term breakdown. Tests: `test_stage10`.

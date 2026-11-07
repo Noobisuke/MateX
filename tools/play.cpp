@@ -12,6 +12,7 @@
 #include "../src/rules/special.hpp"
 #include "../src/rules/validate.hpp"
 #include "../src/rules/gamestate.hpp"
+#include "../src/eval/evaluate.hpp"
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -77,10 +78,18 @@ int main(int argc, char** argv) {
         if (cmd == "help") {
             std::cout << "  <move>      play a legal move in UCI form (e2e4, e1g1, e7e8q)\n"
                          "  moves       list legal moves\n"
+                         "  eval        show the static evaluation terms\n"
                          "  undo        take back the last move\n"
                          "  fen <FEN>   load a position\n"
                          "  new         start position\n"
                          "  quit\n";
+        } else if (cmd == "eval") {
+            const EvalTerms t = evaluateTerms(pos);
+            std::cout << "material " << t.material << "  pst " << t.pst << "  pawns " << t.pawns
+                      << "  bishopPair " << t.bishopPair << "  mobility " << t.mobility
+                      << "  kingSafety " << t.kingSafety << "  (White minus Black)\n"
+                      << "total (White) " << t.total() << ", side to move " << evaluate(pos)
+                      << " cp, phase " << (isEndgame(pos) ? "endgame" : "middlegame") << "\n";
         } else if (cmd == "moves") {
             listMoves(pos);
         } else if (cmd == "undo") {
