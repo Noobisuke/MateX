@@ -98,3 +98,9 @@ docs/      roadmap prompt, rule checklist
 `src/eval/evaluate.*` scores a position in centipawns from the side to move's view
 (material, piece-square tables, pawn structure, bishop pair, mobility, king shield).
 In `play`, type `eval` to see the term breakdown. Tests: `test_stage10`.
+
+## Stage 11: Negamax search
+
+`src/search/search.*`: fixed-depth negamax with mate-distance scores and a principal variation.
+In `play`: `go 3` analyses, `engine 3` plays the engine's move, so you can now play against it.
+Tests: `test_stage11`.

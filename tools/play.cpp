@@ -13,6 +13,7 @@
 #include "../src/rules/validate.hpp"
 #include "../src/rules/gamestate.hpp"
 #include "../src/eval/evaluate.hpp"
+#include "../src/search/search.hpp"
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -79,6 +80,8 @@ int main(int argc, char** argv) {
             std::cout << "  <move>      play a legal move in UCI form (e2e4, e1g1, e7e8q)\n"
                          "  moves       list legal moves\n"
                          "  eval        show the static evaluation terms\n"
+                         "  go [d]      search to depth d (default 3) and show best move, score, PV\n"
+                         "  engine [d]  let the engine play its best move at depth d\n"
                          "  undo        take back the last move\n"
                          "  fen <FEN>   load a position\n"
                          "  new         start position\n"
@@ -90,6 +93,22 @@ int main(int argc, char** argv) {
                       << "  kingSafety " << t.kingSafety << "  (White minus Black)\n"
                       << "total (White) " << t.total() << ", side to move " << evaluate(pos)
                       << " cp, phase " << (isEndgame(pos) ? "endgame" : "middlegame") << "\n";
+        } else if (cmd == "go" || cmd == "engine") {
+            int depth = 3;
+            in >> depth;
+            if (depth < 1 || depth > 6) { std::cout << "Depth must be 1-6 (plain negamax is slow beyond that).\n"; continue; }
+            const SearchResult r = search(pos, depth);
+            if (!r.hasMove) { std::cout << "No legal move (game over).\n"; continue; }
+            std::cout << "depth " << r.depth << "  score " << r.score;
+            if (isMateScore(r.score)) std::cout << "  (mate in " << mateInMoves(r.score) << ")";
+            std::cout << "  nodes " << r.nodes << "  pv";
+            for (const Move& m : r.pv) std::cout << ' ' << m.toString();
+            std::cout << "\n";
+            if (cmd == "engine") {
+                played.push_back({r.bestMove, makeMove(pos, r.bestMove)});
+                history.push(pos);
+                show(pos, history);
+            }
         } else if (cmd == "moves") {
             listMoves(pos);
         } else if (cmd == "undo") {

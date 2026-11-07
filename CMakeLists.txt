@@ -28,6 +28,7 @@ set(ENGINE_SOURCES
     src/perft/perft.cpp
     src/perft/suite.cpp
     src/eval/evaluate.cpp
+    src/search/search.cpp
 )
 
 # --- Main executable (manual/visual inspection) -----------------------------
@@ -42,6 +43,9 @@ add_executable(perft_cli tools/perft_cli.cpp ${ENGINE_SOURCES})
 # --- Evaluation dump tool (batch cross-check)
 add_executable(eval_cli tools/eval_cli.cpp ${ENGINE_SOURCES})
 
+# --- Search dump tool (batch cross-check)
+add_executable(search_cli tools/search_cli.cpp ${ENGINE_SOURCES})
+
 # --- Test executables --------------------------------------------------------
 add_executable(test_stage1 tests/test_stage1.cpp ${ENGINE_SOURCES})
 add_executable(test_stage2 tests/test_stage2.cpp ${ENGINE_SOURCES})
@@ -53,6 +57,7 @@ add_executable(test_stage7 tests/test_stage7.cpp ${ENGINE_SOURCES})
 add_executable(test_stage8 tests/test_stage8.cpp ${ENGINE_SOURCES})
 add_executable(test_stage9 tests/test_stage9.cpp ${ENGINE_SOURCES})
 add_executable(test_stage10 tests/test_stage10.cpp ${ENGINE_SOURCES})
+add_executable(test_stage11 tests/test_stage11.cpp ${ENGINE_SOURCES})
 add_executable(test_regression tests/test_regression.cpp ${ENGINE_SOURCES})
 
 enable_testing()
@@ -66,4 +71,5 @@ add_test(NAME Stage7Tests COMMAND test_stage7)
 add_test(NAME Stage8Tests COMMAND test_stage8)
 add_test(NAME Stage9PerftTests COMMAND test_stage9)
 add_test(NAME Stage10EvalTests COMMAND test_stage10)
+add_test(NAME Stage11SearchTests COMMAND test_stage11)
 add_test(NAME RegressionTests COMMAND test_regression)
