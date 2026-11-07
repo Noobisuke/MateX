@@ -1,5 +1,6 @@
 #pragma once
-// Stage 11: plain negamax search (no pruning yet: alpha-beta is Stage 12).
+// Stage 11: plain negamax. Stage 12: alpha-beta pruning (search()); plain negamax is kept as searchMinimax()
+// as the reference that alpha-beta must always agree with, and as the benchmark baseline.
 //
 // Scores are centipawns from the side to move's point of view.
 // Mate scores:  being checkmated at ply p (root = ply 0) scores  -(MATE_SCORE - p);
@@ -31,4 +32,7 @@ struct SearchResult {
 
 // Search to a fixed depth (plies). Depth is clamped to [0, MAX_SEARCH_DEPTH].
 // `pos` is modified during the search and restored before returning.
-SearchResult search(Position& pos, int depth);
+SearchResult search(Position& pos, int depth);  // alpha-beta
+
+// Same search without pruning. Must return the same score, best move and PV as search(); far slower.
+SearchResult searchMinimax(Position& pos, int depth);

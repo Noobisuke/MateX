@@ -104,3 +104,8 @@ In `play`, type `eval` to see the term breakdown. Tests: `test_stage10`.
 `src/search/search.*`: fixed-depth negamax with mate-distance scores and a principal variation.
 In `play`: `go 3` analyses, `engine 3` plays the engine's move, so you can now play against it.
 Tests: `test_stage11`.
+
+## Stage 12: Alpha-beta
+
+`search()` now uses alpha-beta pruning (`searchMinimax()` keeps the plain version as a reference). Same results, far fewer nodes.
+Tests: `test_stage12` (agreement with minimax + node savings table).

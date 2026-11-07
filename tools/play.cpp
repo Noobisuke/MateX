@@ -95,8 +95,9 @@ int main(int argc, char** argv) {
                       << " cp, phase " << (isEndgame(pos) ? "endgame" : "middlegame") << "\n";
         } else if (cmd == "go" || cmd == "engine") {
             int depth = 3;
-            in >> depth;
-            if (depth < 1 || depth > 6) { std::cout << "Depth must be 1-6 (plain negamax is slow beyond that).\n"; continue; }
+            int requested = 0;
+            if (in >> requested) depth = requested;  // a failed >> would otherwise overwrite depth with 0
+            if (depth < 1 || depth > 10) { std::cout << "Depth must be 1-10.\n"; continue; }
             const SearchResult r = search(pos, depth);
             if (!r.hasMove) { std::cout << "No legal move (game over).\n"; continue; }
             std::cout << "depth " << r.depth << "  score " << r.score;

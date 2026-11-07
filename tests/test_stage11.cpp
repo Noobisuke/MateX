@@ -26,7 +26,7 @@ static Position fromFEN(const std::string& fen) {
 
 static SearchResult run(const std::string& fen, int depth) {
     Position p = fromFEN(fen);
-    return search(p, depth);
+    return searchMinimax(p, depth);  // Stage 11 tests the plain reference search
 }
 
 void testScoreHelpers() {
@@ -50,7 +50,7 @@ void testNodeCounts() {
             Position p = fromFEN(fen);
             uint64_t expected = 1;
             for (int i = 1; i <= d; ++i) { Position q = fromFEN(fen); expected += perft(q, i); }
-            const SearchResult r = search(p, d);
+            const SearchResult r = searchMinimax(p, d);
             CHECK(r.nodes == expected, std::string("node count == perft sum, depth ") + std::to_string(d));
         }
     }
@@ -58,9 +58,9 @@ void testNodeCounts() {
 
 void testDepthZeroAndClamp() {
     Position p = fromFEN("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3");
-    const SearchResult r = search(p, 0);
+    const SearchResult r = searchMinimax(p, 0);
     CHECK(!r.hasMove && r.score == evaluate(p) && r.nodes == 1, "depth 0 = static eval, no move");
-    CHECK(search(p, -5).depth == 0, "negative depth clamps to 0");
+    CHECK(searchMinimax(p, -5).depth == 0, "negative depth clamps to 0");
 }
 
 void testDepthOneBruteForce() {
@@ -79,7 +79,7 @@ void testDepthOneBruteForce() {
             else s = -evaluate(c);
             if (s > best) best = s;
         }
-        CHECK(search(p, 1).score == best, std::string("depth-1 matches brute force: ") + fen);
+        CHECK(searchMinimax(p, 1).score == best, std::string("depth-1 matches brute force: ") + fen);
     }
 }
 
@@ -118,7 +118,11 @@ void testTerminalRoots() {
     r = run("4k3/8/8/8/8/8/8/4KB2 w - - 0 1", 3);
     CHECK(r.score == 0, "dead position = 0");
     r = run("4k3/8/8/8/8/8/8/3QK3 w - - 100 80", 3);
-    CHECK(r.score == 0, "fifty-move draw = 0");
+    CHECK(r.score == 0 && r.hasMove, "fifty-move claim: score 0 but the root still returns a move");
+    r = run("4k3/8/8/8/8/8/8/3QK3 w - - 150 80", 3);
+    CHECK(r.score == 0 && !r.hasMove, "seventy-five-move rule: automatic draw, game over at the root");
+    r = run("6k1/5ppp/8/8/8/8/8/R3K3 w - - 100 80", 2);
+    CHECK(r.score == MATE_SCORE - 1 && r.bestMove.toString() == "a1a8", "mate is found even when a fifty-move claim exists at the root");
     r = run("4k3/8/8/8/8/8/8/3QK3 w - - 98 80", 1);
     CHECK(r.score > 0, "clock 99 after one quiet move is not yet a draw");
     r = run("4k3/8/8/8/8/8/8/3QK3 w - - 99 80", 3);
@@ -140,7 +144,7 @@ void testPVAndRestore() {
     for (const char* fen : fens) {
         Position p = fromFEN(fen);
         const Position before = p;
-        const SearchResult r = search(p, 3);
+        const SearchResult r = searchMinimax(p, 3);
         CHECK(p == before, "position restored after search");
         CHECK(r.pv.size() >= 1 && r.pv.size() <= 3 && r.pv[0] == r.bestMove, "pv shape");
 
@@ -173,7 +177,7 @@ void testColourSymmetry() {
 void testSpeed() {
     Position p = fromFEN("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
     const auto t0 = std::chrono::steady_clock::now();
-    const SearchResult r = search(p, 4);
+    const SearchResult r = searchMinimax(p, 4);
     const auto t1 = std::chrono::steady_clock::now();
     const double sec = std::chrono::duration<double>(t1 - t0).count();
     std::cout << "Kiwipete depth 4: " << r.nodes << " nodes, " << sec << " s, " << static_cast<uint64_t>(r.nodes / sec)
