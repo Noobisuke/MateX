@@ -1,6 +1,6 @@
 #pragma once
-// Stage 11: plain negamax. Stage 12: alpha-beta pruning (search()); plain negamax is kept as searchMinimax()
-// as the reference that alpha-beta must always agree with, and as the benchmark baseline.
+// Stage 11: plain negamax. Stage 12: alpha-beta. Stage 13: quiescence search at depth 0.
+// Earlier variants are kept as references that later ones must agree with (see the list at the bottom).
 //
 // Scores are centipawns from the side to move's point of view.
 // Mate scores:  being checkmated at ply p (root = ply 0) scores  -(MATE_SCORE - p);
@@ -15,7 +15,8 @@
 constexpr int MATE_SCORE = 30000;
 constexpr int INFINITE_SCORE = 32000;
 constexpr int MAX_SEARCH_DEPTH = 64;
-constexpr int MATE_BOUND = MATE_SCORE - MAX_SEARCH_DEPTH;  // |score| >= this is a mate score
+constexpr int MAX_PLY = 128;  // main search plus quiescence never goes deeper than this
+constexpr int MATE_BOUND = MATE_SCORE - MAX_PLY;  // |score| >= this is a mate score
 
 inline bool isMateScore(int score) { return score >= MATE_BOUND || score <= -MATE_BOUND; }
 // Full moves until mate: +n means the side to move mates in n, -n means it is mated in n. 0 if not a mate score.
@@ -32,7 +33,9 @@ struct SearchResult {
 
 // Search to a fixed depth (plies). Depth is clamped to [0, MAX_SEARCH_DEPTH].
 // `pos` is modified during the search and restored before returning.
-SearchResult search(Position& pos, int depth);  // alpha-beta
-
-// Same search without pruning. Must return the same score, best move and PV as search(); far slower.
-SearchResult searchMinimax(Position& pos, int depth);
+//
+// Four variants, each the reference for the next:
+SearchResult searchMinimax(Position& pos, int depth);            // Stage 11: plain negamax, static eval at depth 0
+SearchResult searchAlphaBeta(Position& pos, int depth);          // Stage 12: + alpha-beta pruning
+SearchResult searchMinimaxQuiescence(Position& pos, int depth);  // Stage 13 reference: plain negamax + unpruned quiescence
+SearchResult search(Position& pos, int depth);                   // Stage 13: alpha-beta + quiescence (engine default)

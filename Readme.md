@@ -109,3 +109,8 @@ Tests: `test_stage11`.
 
 `search()` now uses alpha-beta pruning (`searchMinimax()` keeps the plain version as a reference). Same results, far fewer nodes.
 Tests: `test_stage12` (agreement with minimax + node savings table).
+
+## Stage 13: Quiescence search
+
+`search()` now resolves captures/promotions at depth 0 (stand pat, evasions when in check), fixing the horizon effect.
+Older variants stay available (`searchMinimax`, `searchAlphaBeta`) as references. Tests: `test_stage13`.

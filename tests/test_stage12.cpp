@@ -33,7 +33,7 @@ static bool samePV(const SearchResult& a, const SearchResult& b) {
 static bool agree(const std::string& fen, int depth, uint64_t* abNodes = nullptr, uint64_t* mmNodes = nullptr) {
     Position a = fromFEN(fen), b = fromFEN(fen);
     const Position before = a;
-    const SearchResult ab = search(a, depth);
+    const SearchResult ab = searchAlphaBeta(a, depth);
     const SearchResult mm = searchMinimax(b, depth);
     if (abNodes) *abNodes += ab.nodes;
     if (mmNodes) *mmNodes += mm.nodes;
@@ -88,7 +88,7 @@ void testMatesAndDraws() {
     }
     CHECK(bad == 0, "mate / stalemate / draw positions agree at all tested depths");
     Position p = fromFEN("7k/8/5K2/8/8/8/8/5Q2 w - - 0 1");
-    CHECK(search(p, 5).score == MATE_SCORE - 3, "alpha-beta finds shortest mate in 2");
+    CHECK(searchAlphaBeta(p, 5).score == MATE_SCORE - 3, "alpha-beta finds shortest mate in 2");
 }
 
 void testColourSymmetry() {
@@ -96,13 +96,13 @@ void testColourSymmetry() {
                           "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"};
     for (const char* f : fens) {
         Position a = fromFEN(f), b = fromFEN(mirrorFEN(f));
-        CHECK(search(a, 4).score == search(b, 4).score, std::string("mirrored position, same alpha-beta score: ") + f);
+        CHECK(searchAlphaBeta(a, 4).score == searchAlphaBeta(b, 4).score, std::string("mirrored position, same alpha-beta score: ") + f);
     }
 }
 
 void testRootClaimStillMoves() {
     Position p = fromFEN("4k3/8/8/8/8/8/8/3QK3 w - - 100 80");
-    CHECK(search(p, 3).hasMove, "root with a fifty-move claim still returns a move (alpha-beta)");
+    CHECK(searchAlphaBeta(p, 3).hasMove, "root with a fifty-move claim still returns a move (alpha-beta)");
 }
 
 void testNodeSavings() {
@@ -115,7 +115,7 @@ void testNodeSavings() {
     for (const char* f : fens) {
         for (int d = 2; d <= 4; ++d) {
             Position a = fromFEN(f), b = fromFEN(f);
-            const SearchResult ab = search(a, d), mm = searchMinimax(b, d);
+            const SearchResult ab = searchAlphaBeta(a, d), mm = searchMinimax(b, d);
             totalAB += ab.nodes; totalMM += mm.nodes;
             std::cout << "  " << std::string(f).substr(0, 18) << "...  " << d << "   " << mm.nodes << "   " << ab.nodes
                       << "   " << static_cast<double>(mm.nodes) / static_cast<double>(ab.nodes) << "x\n";
