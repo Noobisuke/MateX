@@ -81,7 +81,8 @@ int main(int argc, char** argv) {
                          "  moves       list legal moves\n"
                          "  eval        show the static evaluation terms\n"
                          "  go [d]      search to depth d (default 3) and show best move, score, PV\n"
-                         "  engine [d]  let the engine play its best move at depth d\n"
+                         "  go time <ms>        think for <ms> milliseconds (iterative deepening)\n"
+                         "  engine [d] | engine time <ms>   let the engine play its best move\n"
                          "  undo        take back the last move\n"
                          "  fen <FEN>   load a position\n"
                          "  new         start position\n"
@@ -94,13 +95,31 @@ int main(int argc, char** argv) {
                       << "total (White) " << t.total() << ", side to move " << evaluate(pos)
                       << " cp, phase " << (isEndgame(pos) ? "endgame" : "middlegame") << "\n";
         } else if (cmd == "go" || cmd == "engine") {
-            int depth = 3;
-            int requested = 0;
-            if (in >> requested) depth = requested;  // a failed >> would otherwise overwrite depth with 0
-            if (depth < 1 || depth > 10) { std::cout << "Depth must be 1-10.\n"; continue; }
-            const SearchResult r = search(pos, depth);
+            // go [depth]        fixed depth (default 3)       go time <ms>   iterative deepening for <ms> milliseconds
+            std::string arg;
+            in >> arg;
+            SearchResult r;
+            if (arg == "time") {
+                long long ms = 0;
+                if (!(in >> ms) || ms < 1 || ms > 600000) { std::cout << "Usage: " << cmd << " time <1-600000 milliseconds>\n"; continue; }
+                SearchLimits limits;
+                limits.movetimeMs = ms;
+                r = searchIterative(pos, limits, [](const SearchInfo& i) {
+                    std::cout << "  info depth " << i.depth << " score " << i.score << " nodes " << i.nodes
+                              << " time " << static_cast<long>(i.timeMs) << "ms pv";
+                    for (const Move& m : i.pv) std::cout << ' ' << m.toString();
+                    std::cout << "\n";
+                });
+            } else {
+                int depth = 3;  // an empty or invalid argument keeps the default
+                if (!arg.empty()) {
+                    try { depth = std::stoi(arg); } catch (...) { depth = 0; }
+                }
+                if (depth < 1 || depth > 10) { std::cout << "Depth must be 1-10, or use: " << cmd << " time <ms>\n"; continue; }
+                r = search(pos, depth);
+            }
             if (!r.hasMove) { std::cout << "No legal move (game over).\n"; continue; }
-            std::cout << "depth " << r.depth << "  score " << r.score;
+            std::cout << "best " << r.bestMove.toString() << "  depth " << r.depth << "  score " << r.score;
             if (isMateScore(r.score)) std::cout << "  (mate in " << mateInMoves(r.score) << ")";
             std::cout << "  nodes " << r.nodes << "  pv";
             for (const Move& m : r.pv) std::cout << ' ' << m.toString();

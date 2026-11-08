@@ -10,6 +10,8 @@
 #include "../board/position.hpp"
 #include "../move/move.hpp"
 #include <cstdint>
+#include <atomic>
+#include <functional>
 #include <vector>
 
 constexpr int MATE_SCORE = 30000;
@@ -26,8 +28,10 @@ struct SearchResult {
     bool hasMove = false;         // false if the root position is already terminal (or depth 0)
     Move bestMove{};
     int score = 0;
-    int depth = 0;
+    int depth = 0;                // depth of the (last completed) search
     uint64_t nodes = 0;           // every negamax call, leaves included
+    bool interrupted = false;     // iterative deepening only: stopped by a limit before reaching maxDepth
+    double timeMs = 0;            // iterative deepening only
     std::vector<Move> pv;         // principal variation, pv[0] == bestMove
 };
 
@@ -49,3 +53,29 @@ SearchResult searchAlphaBeta(Position& pos, int depth);          // Stage 12: + 
 SearchResult searchMinimaxQuiescence(Position& pos, int depth);  // Stage 13 reference: plain negamax + unpruned quiescence
 SearchResult searchOrdered(Position& pos, int depth, unsigned flags);  // Stage 14: alpha-beta + quiescence + chosen ordering
 SearchResult search(Position& pos, int depth);                   // engine default: alpha-beta + quiescence + ORDER_DEFAULT
+
+// ---- Stage 15: iterative deepening and time management ---------------------------------------------------------
+struct SearchLimits {
+    int maxDepth = MAX_SEARCH_DEPTH;
+    int64_t movetimeMs = 0;                  // 0 = no time limit
+    uint64_t maxNodes = 0;                   // 0 = no node limit (counted across all iterations)
+    const std::atomic<bool>* stop = nullptr; // set to true from anywhere to interrupt
+};
+
+struct SearchInfo {
+    int depth;
+    int score;
+    uint64_t nodes;
+    double timeMs;
+    std::vector<Move> pv;
+};
+using InfoCallback = std::function<void(const SearchInfo&)>;
+
+// Searches depth 1, 2, 3, ... until a limit is hit. Always returns the result of the last COMPLETED iteration, so
+// the move is legal and fully searched even when interrupted. If even depth 1 cannot finish (very tight limit), a
+// legal fallback move is returned with depth 0 and the static evaluation. `result.depth` is the last completed depth, `result.interrupted` says whether a limit stopped it early (not set when a mate was found).
+// `info` (optional) is called after every completed iteration. `pos` is restored before returning.
+SearchResult searchIterative(Position& pos, const SearchLimits& limits, const InfoCallback& info = nullptr);
+
+// Simple clock allocation: time for this move from the remaining time, the increment and moves to go (0 = unknown).
+int64_t allocateTimeMs(int64_t timeLeftMs, int64_t incrementMs, int movesToGo = 0);

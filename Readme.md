@@ -119,3 +119,8 @@ Older variants stay available (`searchMinimax`, `searchAlphaBeta`) as references
 
 Alpha-beta tries captures (MVV-LVA), killer moves and history-ranked quiet moves first. Scores are unchanged; node counts
 fall to about 3% of the unordered search at depth 4. `bench_search [depth]` prints the comparison. Tests: `test_stage14`.
+
+## Stage 15: Iterative deepening and time management
+
+`searchIterative` searches depth 1, 2, 3... under a time, node or stop-flag limit and always returns the best move of the last
+completed depth (or a legal fallback). In `play`: `go time 1000` / `engine time 1000`. Tests: `test_stage15`.

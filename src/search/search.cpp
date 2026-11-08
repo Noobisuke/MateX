@@ -5,6 +5,7 @@
 #include "../move/makemove.hpp"
 #include "../rules/gamestate.hpp"
 #include <algorithm>
+#include <chrono>
 #include <memory>
 
 namespace {
@@ -28,6 +29,26 @@ struct SearchState {
     int history[2][64][64] = {};
 };
 
+// Limits checked while searching (iterative deepening only). Fixed-depth searches pass nullptr.
+struct Control {
+    uint64_t nodeLimit = 0;  // 0 = unlimited (counts all nodes of all iterations)
+    bool hasDeadline = false;
+    std::chrono::steady_clock::time_point deadline;
+    const std::atomic<bool>* stop = nullptr;
+    bool aborted = false;    // once set, every node returns immediately and the iteration is discarded
+};
+
+// Cheap checks every node, the clock and stop flag only every 2048 nodes.
+bool checkAbort(Control& c, uint64_t nodes) {
+    if (c.aborted) return true;
+    if (c.nodeLimit != 0 && nodes >= c.nodeLimit) { c.aborted = true; return true; }
+    if ((nodes & 2047) != 0) return false;
+    if (c.stop && c.stop->load(std::memory_order_relaxed)) { c.aborted = true; return true; }
+    if (c.hasDeadline && std::chrono::steady_clock::now() >= c.deadline) { c.aborted = true; return true; }
+    return false;
+}
+
+constexpr int ORDER_PV = 2000000;        // previous iteration's best line first
 constexpr int ORDER_TACTICAL = 1000000;  // captures and promotions: always before quiet moves
 constexpr int ORDER_KILLER1 = 900000;
 constexpr int ORDER_KILLER2 = 800000;
@@ -76,7 +97,8 @@ int captureOrderScore(const Move& m) {
 //   2. killer moves: quiet moves that caused a beta cutoff at this ply  [ORDER_KILLERS]
 //   3. remaining quiet moves by history (how often they caused cutoffs) [ORDER_HISTORY]
 
-int quiesce(Position& pos, int alpha, int beta, int ply, uint64_t& nodes, bool prune) {
+int quiesce(Position& pos, int alpha, int beta, int ply, uint64_t& nodes, bool prune, Control* ctl) {
+    if (ctl && checkAbort(*ctl, nodes)) return 0;
     if (isDeadPosition(pos)) return 0;  // e.g. the last rook was just captured: K+B v K is a draw, not +330
     if (ply >= MAX_PLY - 1) return evaluate(pos);
 
@@ -116,8 +138,9 @@ int quiesce(Position& pos, int alpha, int beta, int ply, uint64_t& nodes, bool p
         const Move move = cand[k];
         const UndoInfo undo = makeMove(pos, move);
         ++nodes;
-        const int value = -quiesce(pos, -beta, -alpha, ply + 1, nodes, prune);
+        const int value = -quiesce(pos, -beta, -alpha, ply + 1, nodes, prune, ctl);
         unmakeMove(pos, move, undo);
+        if (ctl && ctl->aborted) return 0;
 
         if (value > best) {
             best = value;
@@ -136,7 +159,7 @@ int negamax(Position& pos, int depth, int ply, PVLine& pv, uint64_t& nodes, Mode
 
     int score = 0;
     if (terminalScore(pos, ply, score)) return score;
-    if (depth == 0) return mode.quiescence ? quiesce(pos, -INFINITE_SCORE, INFINITE_SCORE, ply, nodes, false)
+    if (depth == 0) return mode.quiescence ? quiesce(pos, -INFINITE_SCORE, INFINITE_SCORE, ply, nodes, false, nullptr)
                                            : evaluate(pos);
 
     MoveList moves;
@@ -196,34 +219,46 @@ void recordCutoff(SearchState& st, const Move& m, int ply, int depth, Color side
 // Fail-soft alpha-beta in negamax form. Window: only scores strictly between alpha and beta are exact.
 //   value >= beta : fail-high, the opponent will avoid this node (a lower bound on the true score)
 //   value <= alpha: fail-low, no move here improves our best line (an upper bound on the true score)
+// `prevPV` is the principal variation of the previous iteration; while `onPV` is true (every move so far followed
+// it) the PV move is searched first.
 int alphaBeta(Position& pos, int depth, int ply, int alpha, int beta, PVLine& pv, uint64_t& nodes, Mode mode,
-              SearchState& st) {
+              SearchState& st, Control* ctl, const PVLine* prevPV, bool onPV) {
     ++nodes;
     pv.length = 0;
+    if (ctl && checkAbort(*ctl, nodes)) return 0;
 
     int score = 0;
     if (terminalScore(pos, ply, score)) return score;
-    if (depth == 0) return mode.quiescence ? quiesce(pos, alpha, beta, ply, nodes, true) : evaluate(pos);
+    if (depth == 0) return mode.quiescence ? quiesce(pos, alpha, beta, ply, nodes, true, ctl) : evaluate(pos);
 
     MoveList moves;
     generateLegalMoves(pos, moves);
 
     const Color side = pos.sideToMove();
     int scores[MoveList::CAPACITY];
-    if (mode.ordering) scoreMoves(moves, scores, st, ply, side, mode.ordering);
+    const bool followPV = onPV && prevPV && ply < prevPV->length;
+    const bool ordered = mode.ordering != 0 || followPV;
+    if (ordered) {
+        scoreMoves(moves, scores, st, ply, side, mode.ordering);
+        if (followPV)
+            for (size_t i = 0; i < moves.size(); ++i)
+                if (moves[i] == prevPV->moves[ply]) scores[i] = ORDER_PV;
+    }
 
     int best = -INFINITE_SCORE;
     PVLine childPV;
     for (size_t i = 0; i < moves.size(); ++i) {
-        if (mode.ordering) {  // selection step: bring the best remaining move to position i
+        if (ordered) {  // selection step: bring the best remaining move to position i
             size_t bestIdx = i;
             for (size_t j = i + 1; j < moves.size(); ++j) if (scores[j] > scores[bestIdx]) bestIdx = j;
             if (bestIdx != i) { std::swap(moves[i], moves[bestIdx]); std::swap(scores[i], scores[bestIdx]); }
         }
         const Move move = moves[i];
         const UndoInfo undo = makeMove(pos, move);
-        const int value = -alphaBeta(pos, depth - 1, ply + 1, -beta, -alpha, childPV, nodes, mode, st);
+        const bool childOnPV = followPV && move == prevPV->moves[ply];
+        const int value = -alphaBeta(pos, depth - 1, ply + 1, -beta, -alpha, childPV, nodes, mode, st, ctl, prevPV, childOnPV);
         unmakeMove(pos, move, undo);
+        if (ctl && ctl->aborted) return 0;
 
         if (value > best) {
             best = value;
@@ -250,7 +285,7 @@ SearchResult searchImpl(Position& pos, int depth, Mode mode) {
     PVLine pv;
     if (mode.alphaBeta) {
         auto state = std::make_unique<SearchState>();  // large: keep it off the stack
-        result.score = alphaBeta(pos, depth, 0, -INFINITE_SCORE, INFINITE_SCORE, pv, result.nodes, mode, *state);
+        result.score = alphaBeta(pos, depth, 0, -INFINITE_SCORE, INFINITE_SCORE, pv, result.nodes, mode, *state, nullptr, nullptr, false);
     } else {
         result.score = negamax(pos, depth, 0, pv, result.nodes, mode);
     }
@@ -275,3 +310,92 @@ SearchResult searchOrdered(Position& pos, int depth, unsigned flags) { return se
 SearchResult searchAlphaBeta(Position& pos, int depth) { return searchImpl(pos, depth, {true, false, 0}); }
 SearchResult searchMinimax(Position& pos, int depth) { return searchImpl(pos, depth, {false, false, 0}); }
 SearchResult searchMinimaxQuiescence(Position& pos, int depth) { return searchImpl(pos, depth, {false, true, 0}); }
+
+int64_t allocateTimeMs(int64_t timeLeftMs, int64_t incrementMs, int movesToGo) {
+    if (timeLeftMs <= 0) return 1;
+    const int64_t margin = std::max<int64_t>(10, timeLeftMs / 50);  // never plan to use the last 2% (or 10 ms)
+    const int divisor = movesToGo > 0 ? std::min(movesToGo, 50) + 1 : 30;
+    int64_t t = timeLeftMs / divisor + incrementMs * 3 / 4;
+    t = std::min(t, timeLeftMs - margin);
+    return std::max<int64_t>(t, 1);
+}
+
+SearchResult searchIterative(Position& pos, const SearchLimits& limits, const InfoCallback& info) {
+    using Clock = std::chrono::steady_clock;
+    const auto start = Clock::now();
+    auto elapsedMs = [&]() { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
+
+    const int maxDepth = std::clamp(limits.maxDepth, 1, MAX_SEARCH_DEPTH);
+    Mode mode{true, true, ORDER_DEFAULT};
+    auto state = std::make_unique<SearchState>();  // shared by all iterations: killers and history carry over
+
+    Control ctl;
+    ctl.nodeLimit = limits.maxNodes;
+    ctl.stop = limits.stop;
+    if (limits.movetimeMs > 0) {
+        ctl.hasDeadline = true;
+        ctl.deadline = start + std::chrono::milliseconds(limits.movetimeMs);
+    }
+
+    SearchResult best;
+    uint64_t nodes = 0;
+    PVLine prevPV;
+    bool havePrev = false;
+
+    for (int depth = 1; depth <= maxDepth; ++depth) {
+        PVLine pv;
+        const int score = alphaBeta(pos, depth, 0, -INFINITE_SCORE, INFINITE_SCORE, pv, nodes, mode, *state, &ctl,
+                                    havePrev ? &prevPV : nullptr, havePrev);
+        if (ctl.aborted) {  // discard the unfinished iteration; the previous one stands
+            best.interrupted = true;
+            break;
+        }
+
+        best.score = score;
+        best.depth = depth;
+        best.pv.assign(pv.moves, pv.moves + pv.length);
+        best.hasMove = pv.length > 0;
+        if (best.hasMove) best.bestMove = pv.moves[0];
+        best.nodes = nodes;
+        best.timeMs = elapsedMs();
+        if (info) info(SearchInfo{depth, score, nodes, best.timeMs, best.pv});
+
+        if (!best.hasMove) break;  // root is terminal (mate, stalemate, draw): nothing to search deeper
+        prevPV = pv;
+        havePrev = true;
+
+        // A mate found within the searched depth is the shortest one: searching deeper cannot improve it.
+        if (isMateScore(score) && MATE_SCORE - std::abs(score) <= depth) break;
+        if (limits.stop && limits.stop->load(std::memory_order_relaxed)) { best.interrupted = depth < maxDepth; break; }
+        if (limits.maxNodes != 0 && nodes >= limits.maxNodes) { best.interrupted = depth < maxDepth; break; }
+        // Soft time limit: the next iteration usually costs several times the last, so do not start one that
+        // is unlikely to finish. The hard deadline above still interrupts anything that overruns.
+        if (limits.movetimeMs > 0 && depth < maxDepth && elapsedMs() >= 0.6 * static_cast<double>(limits.movetimeMs)) {
+            best.interrupted = true;
+            break;
+        }
+    }
+
+    // Safe fallback: interrupted before even depth 1 finished. Return a legal move anyway (best capture by MVV-LVA,
+    // else the first legal move) at depth 0 with the static evaluation, so the caller can always play something.
+    if (!best.hasMove && best.interrupted) {
+        MoveList legal;
+        generateLegalMoves(pos, legal);
+        if (legal.size() > 0) {
+            size_t pick = 0;
+            int pickScore = -1;
+            for (size_t i = 0; i < legal.size(); ++i) {
+                const int sc = (legal[i].isCapture() || legal[i].isPromotion()) ? captureOrderScore(legal[i]) : 0;
+                if (sc > pickScore) { pickScore = sc; pick = i; }
+            }
+            best.hasMove = true;
+            best.bestMove = legal[pick];
+            best.pv.assign(1, legal[pick]);
+            best.score = evaluate(pos);
+            best.depth = 0;
+        }
+    }
+    best.nodes = nodes;
+    best.timeMs = elapsedMs();
+    return best;
+}
