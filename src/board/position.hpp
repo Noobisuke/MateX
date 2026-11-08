@@ -1,6 +1,7 @@
 #pragma once
 #include "types.hpp"
 #include "bitboard.hpp"
+#include "zobrist.hpp"
 #include <array>
 #include <string>
 
@@ -46,10 +47,16 @@ public:
 
     // --- State accessors ---
     Color sideToMove() const { return sideToMove_; }
-    void setSideToMove(Color c) { sideToMove_ = c; }
+    void setSideToMove(Color c) {
+        if ((c == BLACK) != (sideToMove_ == BLACK)) baseKey_ ^= zobrist::KEYS.side;
+        sideToMove_ = c;
+    }
 
     CastlingRights castlingRights() const { return castlingRights_; }
-    void setCastlingRights(CastlingRights cr) { castlingRights_ = cr; }
+    void setCastlingRights(CastlingRights cr) {
+        baseKey_ ^= zobrist::KEYS.castling[castlingRights_ & 15] ^ zobrist::KEYS.castling[cr & 15];
+        castlingRights_ = cr;
+    }
 
     int enPassantSquare() const { return enPassantSquare_; }
     void setEnPassantSquare(int sq) { enPassantSquare_ = sq; }
@@ -59,6 +66,11 @@ public:
 
     int fullmoveNumber() const { return fullmoveNumber_; }
     void setFullmoveNumber(int fm) { fullmoveNumber_ = fm; }
+
+    // --- Zobrist key (Stage 16) ---
+    // Incrementally maintained hash of placement + side to move + castling rights (NOT en passant).
+    // Use hashKey(pos) from zobrist.hpp for the full key including en passant.
+    uint64_t baseKey() const { return baseKey_; }
 
     // Exact equality of every field (placement, side, rights, ep, clocks).
     // Used by tests to prove make/unmake restores the previous position.
@@ -79,4 +91,6 @@ private:
     int enPassantSquare_;  // NO_SQUARE if none
     int halfmoveClock_;
     int fullmoveNumber_;
+
+    uint64_t baseKey_;  // see baseKey(); 0 for the empty board with White to move and no castling rights
 };

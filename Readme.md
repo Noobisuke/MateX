@@ -16,7 +16,9 @@ with correctness and testing first, performance second.
 | 7 | Make / unmake | Done |
 | 8 | Game state and draw rules (mate, stalemate, dead position, 50/75-move, 3/5-fold) | Done |
 | 9 | Perft and complete rule verification | Done: **move generator verified** |
-| 10-20 | Evaluation, search, UCI, optimization | Planned |
+| 10-15 | Evaluation, negamax, alpha-beta, quiescence, move ordering, iterative deepening | Done |
+| 16 | Zobrist hashing and transposition table | Done |
+| 17-20 | Advanced search, advanced evaluation, UCI, final strength work | Planned |
 
 The move generator passes a 37-position perft suite (189 node counts, about 73 million
 nodes) against independently computed reference counts. See `docs/RULE_CHECKLIST.md`.
@@ -58,11 +60,13 @@ g++ -std=c++20 -O2 -Wall -Wextra -o chess_engine src/main.cpp src/board/*.cpp sr
 ./perft_cli --detailed 4             # captures, en passant, castles, promotions, checks, mates
 ./perft_cli --bulk 5                 # same count using bulk counting
 ./perft_cli --suite                  # the whole perft suite (about 7 seconds)
+./bench_tt 5                         # what the transposition table buys, and which replacement policy is best
+./hash_cli < fens.txt                # Zobrist key of every FEN on stdin (for cross-checks)
 ```
 
 ## Test
 
-Each stage has its own test executable (`test_stage1` ... `test_stage9`) plus
+Each stage has its own test executable (`test_stage1` ... `test_stage16`) plus
 `test_regression` for bugs found by audits. Run them all with CTest from the build folder:
 
 ```bash
@@ -73,14 +77,16 @@ ctest --output-on-failure
 
 ```
 src/
-  board/   types, bitboards, Position, FEN, attack detection
+  board/   types, bitboards, Position, FEN, attack detection, Zobrist keys
   move/    Move, MoveList, pseudo-legal and legal generation, make/unmake
   rules/   castling and en passant helpers, position validation, repetition, game state
   perft/   perft, divide, detailed stats, the standard suite
+  eval/    static evaluation
+  search/  alpha-beta search, quiescence, ordering, iterative deepening, transposition table
   main.cpp CLI for manual inspection
-tools/     play (interactive), perft_cli
+tools/     play (interactive), perft_cli, bench_search, bench_tt, hash_cli
 tests/     one test executable per stage, plus regression tests
-docs/      roadmap prompt, rule checklist
+docs/      roadmap, rule checklist
 ```
 
 ## Design notes
@@ -124,3 +130,32 @@ fall to about 3% of the unordered search at depth 4. `bench_search [depth]` prin
 
 `searchIterative` searches depth 1, 2, 3... under a time, node or stop-flag limit and always returns the best move of the last
 completed depth (or a legal fallback). In `play`: `go time 1000` / `engine time 1000`. Tests: `test_stage15`.
+
+## Stage 16: Zobrist hashing and transposition table
+
+`src/board/zobrist.*`: a 64-bit key per position, the XOR of random keys for every (piece, square), the side to move,
+the castling-rights mask and, only when a pawn can actually capture en passant, the ep file. The keys are generated at
+compile time from a fixed seed, so the same position always hashes to the same value. `Position` keeps the
+placement/side/castling part up to date inside `putPiece`, `removePiece` and the two setters, so make/unmake needed no
+changes; `hashKey(pos)` adds the en passant part. The halfmove clock is not part of the key.
+
+`src/search/tt.*`: a transposition table with 16-byte entries (full key, depth, score, EXACT/LOWER/UPPER bound, packed
+move). Mate scores are stored relative to their node and rebased on probe. Four replacement policies exist
+(`ALWAYS`, `DEPTH_AGE`, `TWO_TIER`, `BUCKET4`); `BUCKET4` is the default because it degrades least when the table is
+small (see `bench_tt`). The table supplies the hash move first in ordering (validated against the legal moves, never
+trusted) and cuts nodes off. The root is never cut off, and the PV is extended from the table when a cutoff shortened it.
+
+API: `searchTT(pos, depth, tt, mode)` for fixed depth, or `SearchLimits::tt` for `searchIterative`. A null table is
+exactly the Stage 15 behaviour. Modes: `TT_DEPTH_GE` (standard, entries of at least the requested depth),
+`TT_EXACT_DEPTH` (only entries of exactly the requested depth: provably the same score as no table, used by the tests)
+and `TT_ORDER_ONLY` (hash move only, no cutoffs).
+
+In `play`: `hash` shows the key, `hashfull` the table statistics, `clearhash` empties it; `go` and `engine` share one
+16 MB table for the whole game.
+
+Measured (`bench_tt 5`, 8 positions): at a fixed depth the table needs 77% of the nodes (hash move alone: 93%); with
+iterative deepening about 50% of the nodes. Tests: `test_stage16`.
+
+Known limits: the halfmove clock is not in the key (the 50-move draw rule is path dependent, as in other engines);
+a pinned en passant capture can give two keys for one position (a missed match, never a wrong one); no repetition
+detection inside the search yet; the table is not used inside quiescence.

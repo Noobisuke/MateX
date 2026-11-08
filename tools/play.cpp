@@ -13,7 +13,9 @@
 #include "../src/rules/validate.hpp"
 #include "../src/rules/gamestate.hpp"
 #include "../src/eval/evaluate.hpp"
+#include "../src/board/zobrist.hpp"
 #include "../src/search/search.hpp"
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -65,6 +67,7 @@ int main(int argc, char** argv) {
         if (!loadFEN(pos, fen, &err) || !validatePosition(pos, &err)) { std::cout << "Bad FEN: " << err << "\n"; return 1; }
     }
     history.reset(pos);
+    TranspositionTable tt(16);  // Stage 16: shared by every go/engine command, so later searches reuse earlier work
 
     std::cout << "Type a move like e2e4 (promotion: e7e8q). 'help' for commands.\n";
     show(pos, history);
@@ -83,6 +86,8 @@ int main(int argc, char** argv) {
                          "  go [d]      search to depth d (default 3) and show best move, score, PV\n"
                          "  go time <ms>        think for <ms> milliseconds (iterative deepening)\n"
                          "  engine [d] | engine time <ms>   let the engine play its best move\n"
+                         "  hash        show the Zobrist key of the position (full key and incremental part)\n"
+                         "  hashfull    transposition-table fill and hit statistics   clearhash   empty the table\n"
                          "  undo        take back the last move\n"
                          "  fen <FEN>   load a position\n"
                          "  new         start position\n"
@@ -104,6 +109,7 @@ int main(int argc, char** argv) {
                 if (!(in >> ms) || ms < 1 || ms > 600000) { std::cout << "Usage: " << cmd << " time <1-600000 milliseconds>\n"; continue; }
                 SearchLimits limits;
                 limits.movetimeMs = ms;
+                limits.tt = &tt;
                 r = searchIterative(pos, limits, [](const SearchInfo& i) {
                     std::cout << "  info depth " << i.depth << " score " << i.score << " nodes " << i.nodes
                               << " time " << static_cast<long>(i.timeMs) << "ms pv";
@@ -116,7 +122,7 @@ int main(int argc, char** argv) {
                     try { depth = std::stoi(arg); } catch (...) { depth = 0; }
                 }
                 if (depth < 1 || depth > 10) { std::cout << "Depth must be 1-10, or use: " << cmd << " time <ms>\n"; continue; }
-                r = search(pos, depth);
+                r = searchTT(pos, depth, tt);
             }
             if (!r.hasMove) { std::cout << "No legal move (game over).\n"; continue; }
             std::cout << "best " << r.bestMove.toString() << "  depth " << r.depth << "  score " << r.score;
@@ -129,6 +135,15 @@ int main(int argc, char** argv) {
                 history.push(pos);
                 show(pos, history);
             }
+        } else if (cmd == "hash") {
+            std::cout << std::hex << std::setfill('0') << "key " << std::setw(16) << hashKey(pos) << "  (placement+side+castling part "
+                      << std::setw(16) << pos.baseKey() << ")" << std::dec << std::setfill(' ') << "\n";
+        } else if (cmd == "hashfull") {
+            std::cout << "table: " << tt.entryCount() << " entries, " << tt.hashfull() << " permille full, probes " << tt.probes()
+                      << ", hits " << tt.hits() << ", stores " << tt.stores() << "\n";
+        } else if (cmd == "clearhash") {
+            tt.clear();
+            std::cout << "Transposition table cleared.\n";
         } else if (cmd == "moves") {
             listMoves(pos);
         } else if (cmd == "undo") {

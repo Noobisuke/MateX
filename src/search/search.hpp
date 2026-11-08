@@ -9,6 +9,7 @@
 
 #include "../board/position.hpp"
 #include "../move/move.hpp"
+#include "tt.hpp"
 #include <cstdint>
 #include <atomic>
 #include <functional>
@@ -54,12 +55,32 @@ SearchResult searchMinimaxQuiescence(Position& pos, int depth);  // Stage 13 ref
 SearchResult searchOrdered(Position& pos, int depth, unsigned flags);  // Stage 14: alpha-beta + quiescence + chosen ordering
 SearchResult search(Position& pos, int depth);                   // engine default: alpha-beta + quiescence + ORDER_DEFAULT
 
+// ---- Stage 16: transposition table ---------------------------------------------------------------------------
+// How a table entry may cut off a node.
+enum TTMode {
+    TT_DEPTH_GE = 0,     // standard: an entry searched to at least the requested depth may be used (stronger, but
+                         // the score can differ from a plain fixed-depth search because deeper results leak in)
+    TT_EXACT_DEPTH = 1,  // test mode: only entries of EXACTLY the requested depth are used. The table then cannot
+                         // change the score: it must equal the search without a table. Nodes still drop.
+    TT_ORDER_ONLY = 2,   // the table only supplies the hash move for ordering, no cutoffs (never changes the score;
+                         // measures how much of the saving comes from ordering alone)
+};
+
+// Alpha-beta + quiescence + ORDER_DEFAULT (or `ordering`) with a transposition table and the hash move first.
+// The table is NOT cleared: entries from earlier searches stay usable (newSearch() is called to age them).
+// The root is never cut off, so a best move is always returned. The PV is extended from the table where a
+// cutoff truncated it.
+SearchResult searchTT(Position& pos, int depth, TranspositionTable& tt, TTMode mode = TT_DEPTH_GE,
+                      unsigned ordering = ORDER_DEFAULT);
+
 // ---- Stage 15: iterative deepening and time management ---------------------------------------------------------
 struct SearchLimits {
     int maxDepth = MAX_SEARCH_DEPTH;
     int64_t movetimeMs = 0;                  // 0 = no time limit
     uint64_t maxNodes = 0;                   // 0 = no node limit (counted across all iterations)
     const std::atomic<bool>* stop = nullptr; // set to true from anywhere to interrupt
+    TranspositionTable* tt = nullptr;        // Stage 16: optional table, shared across calls (nullptr = none)
+    TTMode ttMode = TT_DEPTH_GE;
 };
 
 struct SearchInfo {

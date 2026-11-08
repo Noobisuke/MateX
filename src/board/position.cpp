@@ -10,6 +10,7 @@ void Position::clear() {
     pieceBB_.fill(EMPTY_BB);
     occupancyByColor_.fill(EMPTY_BB);
     occupancyAll_ = EMPTY_BB;
+    baseKey_ = 0;
 
     sideToMove_ = WHITE;
     castlingRights_ = 0;
@@ -35,6 +36,7 @@ void Position::putPiece(Piece p, int sq) {
     // Incremental occupancy update (Stage 7): touch one bit instead of rebuilding.
     setBit(occupancyByColor_[colorOf(p)], sq);
     setBit(occupancyAll_, sq);
+    baseKey_ ^= zobrist::KEYS.piece[p][sq];
 }
 
 void Position::removePiece(int sq) {
@@ -44,6 +46,7 @@ void Position::removePiece(int sq) {
     clearBit(pieceBB_[p], sq);
     clearBit(occupancyByColor_[colorOf(p)], sq);
     clearBit(occupancyAll_, sq);
+    baseKey_ ^= zobrist::KEYS.piece[p][sq];
 }
 
 void Position::setStartingPosition() {
@@ -60,8 +63,8 @@ void Position::setStartingPosition() {
         putPiece(makePiece(BLACK, backRank[file]), squareOf(file, 7));
     }
 
-    sideToMove_ = WHITE;
-    castlingRights_ = WHITE_KINGSIDE | WHITE_QUEENSIDE | BLACK_KINGSIDE | BLACK_QUEENSIDE;
+    setSideToMove(WHITE);
+    setCastlingRights(WHITE_KINGSIDE | WHITE_QUEENSIDE | BLACK_KINGSIDE | BLACK_QUEENSIDE);  // must go through the setter: it updates the key
     enPassantSquare_ = NO_SQUARE;
     halfmoveClock_ = 0;
     fullmoveNumber_ = 1;
@@ -122,6 +125,8 @@ bool Position::isConsistent() const {
     if (expectedWhite != occupancyByColor_[WHITE]) return false;
     if (expectedBlack != occupancyByColor_[BLACK]) return false;
     if ((expectedWhite | expectedBlack) != occupancyAll_) return false;
+
+    if (baseKey_ != recomputeBaseKey(*this)) return false;  // incremental Zobrist key must match a full recompute
 
     return true;
 }

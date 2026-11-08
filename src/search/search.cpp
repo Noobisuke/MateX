@@ -1,5 +1,6 @@
 #include "search.hpp"
 #include "../board/attacks.hpp"
+#include "../board/zobrist.hpp"
 #include "../eval/evaluate.hpp"
 #include "../move/legal.hpp"
 #include "../move/makemove.hpp"
@@ -27,6 +28,8 @@ struct Mode {
 struct SearchState {
     Move killers[MAX_PLY + 1][2];
     int history[2][64][64] = {};
+    TranspositionTable* tt = nullptr;  // Stage 16: nullptr = no table (exactly the Stage 14/15 behaviour)
+    TTMode ttMode = TT_DEPTH_GE;       // which table entries may cut a node off (see search.hpp)
 };
 
 // Limits checked while searching (iterative deepening only). Fixed-depth searches pass nullptr.
@@ -48,6 +51,7 @@ bool checkAbort(Control& c, uint64_t nodes) {
     return false;
 }
 
+constexpr int ORDER_HASH = 3000000;      // the transposition-table move: before everything else
 constexpr int ORDER_PV = 2000000;        // previous iteration's best line first
 constexpr int ORDER_TACTICAL = 1000000;  // captures and promotions: always before quiet moves
 constexpr int ORDER_KILLER1 = 900000;
@@ -231,21 +235,44 @@ int alphaBeta(Position& pos, int depth, int ply, int alpha, int beta, PVLine& pv
     if (terminalScore(pos, ply, score)) return score;
     if (depth == 0) return mode.quiescence ? quiesce(pos, alpha, beta, ply, nodes, true, ctl) : evaluate(pos);
 
+    // Transposition table probe (Stage 16). Terminal positions were handled above, so every entry describes a
+    // position with legal moves. The root (ply 0) is never cut off: the search must produce a move and a PV there.
+    const int alphaOrig = alpha;
+    uint64_t key = 0;
+    uint16_t ttMove = 0;
+    if (st.tt) {
+        key = hashKey(pos);
+        TTEntry e;
+        if (st.tt->probe(key, e)) {
+            ttMove = e.move;
+            const bool usable = st.ttMode == TT_DEPTH_GE ? e.depth >= depth : (st.ttMode == TT_EXACT_DEPTH && e.depth == depth);
+            if (ply > 0 && usable) {
+                const int s = scoreFromTT(e.score, ply);
+                const Bound b = e.bound();
+                if (b == BOUND_EXACT || (b == BOUND_LOWER && s >= beta) || (b == BOUND_UPPER && s <= alpha)) return s;
+            }
+        }
+    }
+
     MoveList moves;
     generateLegalMoves(pos, moves);
 
     const Color side = pos.sideToMove();
     int scores[MoveList::CAPACITY];
     const bool followPV = onPV && prevPV && ply < prevPV->length;
-    const bool ordered = mode.ordering != 0 || followPV;
+    const bool ordered = mode.ordering != 0 || followPV || ttMove != 0;
     if (ordered) {
         scoreMoves(moves, scores, st, ply, side, mode.ordering);
         if (followPV)
             for (size_t i = 0; i < moves.size(); ++i)
                 if (moves[i] == prevPV->moves[ply]) scores[i] = ORDER_PV;
+        if (ttMove != 0)  // never trust the stored move: it only counts if it is one of the legal moves right now
+            for (size_t i = 0; i < moves.size(); ++i)
+                if (packedMoveMatches(ttMove, moves[i])) { scores[i] = ORDER_HASH; break; }
     }
 
     int best = -INFINITE_SCORE;
+    Move bestMove{};
     PVLine childPV;
     for (size_t i = 0; i < moves.size(); ++i) {
         if (ordered) {  // selection step: bring the best remaining move to position i
@@ -262,6 +289,7 @@ int alphaBeta(Position& pos, int depth, int ply, int alpha, int beta, PVLine& pv
 
         if (value > best) {
             best = value;
+            bestMove = move;
             if (value > alpha) {  // improves the window: this is (so far) the principal variation
                 alpha = value;
                 pv.moves[0] = move;
@@ -274,10 +302,47 @@ int alphaBeta(Position& pos, int depth, int ply, int alpha, int beta, PVLine& pv
             }
         }
     }
+
+    if (st.tt) {  // an aborted node already returned above, so everything stored here is a finished result
+        const Bound b = best >= beta ? BOUND_LOWER : (best > alphaOrig ? BOUND_EXACT : BOUND_UPPER);
+        // A fail-low node has no reliable best move (every move was refuted), so none is stored for UPPER.
+        st.tt->store(key, depth, best, b, b == BOUND_UPPER ? uint16_t{0} : packMove(bestMove), ply);
+    }
     return best;
 }
 
-SearchResult searchImpl(Position& pos, int depth, Mode mode) {
+// A transposition cutoff ends the PV early. Walk the table from the end of the PV, following stored best moves
+// (each checked against the legal moves, and stopping at a repeated position), so the reported line is complete.
+void extendPVFromTT(Position& pos, std::vector<Move>& pv, const TranspositionTable& tt) {
+    std::vector<Move> applied;
+    std::vector<UndoInfo> undos;
+    std::vector<uint64_t> seen;
+    for (const Move& m : pv) {
+        seen.push_back(hashKey(pos));
+        undos.push_back(makeMove(pos, m));
+        applied.push_back(m);
+    }
+    while (static_cast<int>(pv.size()) < MAX_SEARCH_DEPTH) {
+        const uint64_t key = hashKey(pos);
+        if (std::find(seen.begin(), seen.end(), key) != seen.end()) break;
+        seen.push_back(key);
+        TTEntry e;
+        if (!tt.probe(key, e) || e.move == 0) break;
+        MoveList legal;
+        generateLegalMoves(pos, legal);
+        const Move* found = nullptr;
+        for (size_t i = 0; i < legal.size(); ++i)
+            if (packedMoveMatches(e.move, legal[i])) { found = &legal[i]; break; }
+        if (!found) break;
+        const Move m = *found;
+        undos.push_back(makeMove(pos, m));
+        applied.push_back(m);
+        pv.push_back(m);
+    }
+    for (size_t i = applied.size(); i-- > 0;) unmakeMove(pos, applied[i], undos[i]);
+}
+
+SearchResult searchImpl(Position& pos, int depth, Mode mode, TranspositionTable* tt = nullptr, TTMode ttMode = TT_DEPTH_GE) {
     depth = std::clamp(depth, 0, MAX_SEARCH_DEPTH);
     SearchResult result;
     result.depth = depth;
@@ -285,6 +350,9 @@ SearchResult searchImpl(Position& pos, int depth, Mode mode) {
     PVLine pv;
     if (mode.alphaBeta) {
         auto state = std::make_unique<SearchState>();  // large: keep it off the stack
+        state->tt = tt;
+        state->ttMode = ttMode;
+        if (tt) tt->newSearch();
         result.score = alphaBeta(pos, depth, 0, -INFINITE_SCORE, INFINITE_SCORE, pv, result.nodes, mode, *state, nullptr, nullptr, false);
     } else {
         result.score = negamax(pos, depth, 0, pv, result.nodes, mode);
@@ -293,6 +361,7 @@ SearchResult searchImpl(Position& pos, int depth, Mode mode) {
     if (pv.length > 0) {
         result.hasMove = true;
         result.bestMove = pv.moves[0];
+        if (tt) extendPVFromTT(pos, result.pv, *tt);
     }
     return result;
 }
@@ -307,6 +376,9 @@ int mateInMoves(int score) {
 
 SearchResult search(Position& pos, int depth) { return searchImpl(pos, depth, {true, true, ORDER_DEFAULT}); }
 SearchResult searchOrdered(Position& pos, int depth, unsigned flags) { return searchImpl(pos, depth, {true, true, flags}); }
+SearchResult searchTT(Position& pos, int depth, TranspositionTable& tt, TTMode mode, unsigned ordering) {
+    return searchImpl(pos, depth, {true, true, ordering}, &tt, mode);
+}
 SearchResult searchAlphaBeta(Position& pos, int depth) { return searchImpl(pos, depth, {true, false, 0}); }
 SearchResult searchMinimax(Position& pos, int depth) { return searchImpl(pos, depth, {false, false, 0}); }
 SearchResult searchMinimaxQuiescence(Position& pos, int depth) { return searchImpl(pos, depth, {false, true, 0}); }
@@ -328,6 +400,9 @@ SearchResult searchIterative(Position& pos, const SearchLimits& limits, const In
     const int maxDepth = std::clamp(limits.maxDepth, 1, MAX_SEARCH_DEPTH);
     Mode mode{true, true, ORDER_DEFAULT};
     auto state = std::make_unique<SearchState>();  // shared by all iterations: killers and history carry over
+    state->tt = limits.tt;
+    state->ttMode = limits.ttMode;
+    if (limits.tt) limits.tt->newSearch();  // one generation per search; iterations of one search share it
 
     Control ctl;
     ctl.nodeLimit = limits.maxNodes;
@@ -356,6 +431,7 @@ SearchResult searchIterative(Position& pos, const SearchLimits& limits, const In
         best.pv.assign(pv.moves, pv.moves + pv.length);
         best.hasMove = pv.length > 0;
         if (best.hasMove) best.bestMove = pv.moves[0];
+        if (best.hasMove && limits.tt) extendPVFromTT(pos, best.pv, *limits.tt);  // reporting only: prevPV stays the raw line
         best.nodes = nodes;
         best.timeMs = elapsedMs();
         if (info) info(SearchInfo{depth, score, nodes, best.timeMs, best.pv});
