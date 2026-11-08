@@ -46,6 +46,9 @@ add_executable(eval_cli tools/eval_cli.cpp ${ENGINE_SOURCES})
 # --- Search dump tool (batch cross-check)
 add_executable(search_cli tools/search_cli.cpp ${ENGINE_SOURCES})
 
+# --- Move-ordering benchmark
+add_executable(bench_search tools/bench_search.cpp ${ENGINE_SOURCES})
+
 # --- Test executables --------------------------------------------------------
 add_executable(test_stage1 tests/test_stage1.cpp ${ENGINE_SOURCES})
 add_executable(test_stage2 tests/test_stage2.cpp ${ENGINE_SOURCES})
@@ -60,6 +63,7 @@ add_executable(test_stage10 tests/test_stage10.cpp ${ENGINE_SOURCES})
 add_executable(test_stage11 tests/test_stage11.cpp ${ENGINE_SOURCES})
 add_executable(test_stage12 tests/test_stage12.cpp ${ENGINE_SOURCES})
 add_executable(test_stage13 tests/test_stage13.cpp ${ENGINE_SOURCES})
+add_executable(test_stage14 tests/test_stage14.cpp ${ENGINE_SOURCES})
 add_executable(test_regression tests/test_regression.cpp ${ENGINE_SOURCES})
 
 enable_testing()
@@ -76,4 +80,5 @@ add_test(NAME Stage10EvalTests COMMAND test_stage10)
 add_test(NAME Stage11SearchTests COMMAND test_stage11)
 add_test(NAME Stage12AlphaBetaTests COMMAND test_stage12)
 add_test(NAME Stage13QuiescenceTests COMMAND test_stage13)
+add_test(NAME Stage14OrderingTests COMMAND test_stage14)
 add_test(NAME RegressionTests COMMAND test_regression)

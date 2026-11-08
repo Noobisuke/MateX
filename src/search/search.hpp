@@ -31,6 +31,15 @@ struct SearchResult {
     std::vector<Move> pv;         // principal variation, pv[0] == bestMove
 };
 
+// Move-ordering techniques for the alpha-beta search (Stage 14). Combine with |.
+enum OrderingFlags : unsigned {
+    ORDER_NONE = 0,
+    ORDER_CAPTURES = 1,   // captures and promotions first, MVV-LVA
+    ORDER_KILLERS = 2,    // killer moves (two per ply)
+    ORDER_HISTORY = 4,    // history heuristic for the remaining quiet moves
+    ORDER_DEFAULT = ORDER_CAPTURES | ORDER_KILLERS | ORDER_HISTORY,
+};
+
 // Search to a fixed depth (plies). Depth is clamped to [0, MAX_SEARCH_DEPTH].
 // `pos` is modified during the search and restored before returning.
 //
@@ -38,4 +47,5 @@ struct SearchResult {
 SearchResult searchMinimax(Position& pos, int depth);            // Stage 11: plain negamax, static eval at depth 0
 SearchResult searchAlphaBeta(Position& pos, int depth);          // Stage 12: + alpha-beta pruning
 SearchResult searchMinimaxQuiescence(Position& pos, int depth);  // Stage 13 reference: plain negamax + unpruned quiescence
-SearchResult search(Position& pos, int depth);                   // Stage 13: alpha-beta + quiescence (engine default)
+SearchResult searchOrdered(Position& pos, int depth, unsigned flags);  // Stage 14: alpha-beta + quiescence + chosen ordering
+SearchResult search(Position& pos, int depth);                   // engine default: alpha-beta + quiescence + ORDER_DEFAULT

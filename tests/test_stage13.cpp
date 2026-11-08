@@ -51,7 +51,7 @@ static std::vector<std::string> positions() {
 static bool agree(const std::string& fen, int depth) {
     Position a = fromFEN(fen), b = fromFEN(fen);
     const Position before = a;
-    const SearchResult q = search(a, depth);
+    const SearchResult q = searchOrdered(a, depth, ORDER_NONE);
     const SearchResult ref = searchMinimaxQuiescence(b, depth);
     const bool ok = q.score == ref.score && q.hasMove == ref.hasMove && (!q.hasMove || q.bestMove == ref.bestMove) &&
                     samePV(q, ref) && a == before;
@@ -192,7 +192,7 @@ void testNodeCost() {
             const auto t0 = std::chrono::steady_clock::now();
             const SearchResult ab = searchAlphaBeta(a, d);
             const auto t1 = std::chrono::steady_clock::now();
-            const SearchResult q = search(b, d);
+            const SearchResult q = searchOrdered(b, d, ORDER_NONE);
             const auto t2 = std::chrono::steady_clock::now();
             std::cout << "  " << std::string(f).substr(0, 14) << "...  " << d << "     " << ab.nodes << "   " << q.nodes << "   "
                       << static_cast<double>(q.nodes) / static_cast<double>(ab.nodes) << "x   " << ab.bestMove.toString() << " -> "

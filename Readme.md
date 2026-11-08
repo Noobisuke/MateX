@@ -114,3 +114,8 @@ Tests: `test_stage12` (agreement with minimax + node savings table).
 
 `search()` now resolves captures/promotions at depth 0 (stand pat, evasions when in check), fixing the horizon effect.
 Older variants stay available (`searchMinimax`, `searchAlphaBeta`) as references. Tests: `test_stage13`.
+
+## Stage 14: Move ordering
+
+Alpha-beta tries captures (MVV-LVA), killer moves and history-ranked quiet moves first. Scores are unchanged; node counts
+fall to about 3% of the unordered search at depth 4. `bench_search [depth]` prints the comparison. Tests: `test_stage14`.
