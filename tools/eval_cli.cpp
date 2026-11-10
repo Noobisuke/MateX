@@ -1,6 +1,6 @@
 // eval_cli: reads FENs (one per line) from stdin, prints the evaluation terms.
 // Output per line: material pst pawns bishopPair mobility kingSafety total endgame
-// With "--stm" the total is printed from the side to move's view.
+// "--eval <flags>" (e.g. taper,passed or all) selects the Stage 18 evaluation features; the default is the basic evaluation.
 #include "../src/board/position.hpp"
 #include "../src/board/fen.hpp"
 #include "../src/board/attacks.hpp"
@@ -10,6 +10,13 @@
 
 int main(int argc, char** argv) {
     initAttackTables();
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::string(argv[i]) == "--eval") {
+            unsigned f = 0;
+            if (!parseEvalFlags(argv[i + 1], f)) { std::cerr << "unknown eval flag\n"; return 1; }
+            setEvalFlags(f);
+        }
+    }
     std::string line;
     while (std::getline(std::cin, line)) {
         if (line.empty()) continue;
@@ -21,6 +28,5 @@ int main(int argc, char** argv) {
                   << t.mobility << ' ' << t.kingSafety << ' ' << t.total() << ' ' << (isEndgame(pos) ? 1 : 0)
                   << ' ' << evaluate(pos) << "\n";
     }
-    (void)argc; (void)argv;
     return 0;
 }

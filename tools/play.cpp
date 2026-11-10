@@ -68,6 +68,7 @@ int main(int argc, char** argv) {
     }
     history.reset(pos);
     TranspositionTable tt(16);  // Stage 16: shared by every go/engine command, so later searches reuse earlier work
+    setEvalFlags(evalDefault());  // Stage 18: the engine plays with the recommended evaluation ('evalopts' changes it)
     SearchOptions options = SearchOptions::engineDefault();  // Stage 17: search techniques ('options' shows or changes them)
     auto gameKeys = [&]() {     // positions played so far, oldest first: the search treats a repetition of one as a draw
         std::vector<uint64_t> keys;
@@ -96,6 +97,8 @@ int main(int argc, char** argv) {
                          "  hashfull    transposition-table fill and hit statistics   clearhash   empty the table\n"
                          "  options [list]   show or set the search techniques: none, default, all, or e.g. pvs,null,lmr\n"
                          "                   (names: pvs asp rfp null lmr fut raz ext sing seeord seeq rep; '-x' removes one)\n"
+                         "  evalopts [list]  show or set the evaluation features: none, default, all, or e.g. taper,passed\n"
+                         "                   (names: taper mobility passed pawns outpost rook kingzone threats space; '-x' removes one)\n"
                          "  undo        take back the last move\n"
                          "  fen <FEN>   load a position\n"
                          "  new         start position\n"
@@ -104,9 +107,10 @@ int main(int argc, char** argv) {
             const EvalTerms t = evaluateTerms(pos);
             std::cout << "material " << t.material << "  pst " << t.pst << "  pawns " << t.pawns
                       << "  bishopPair " << t.bishopPair << "  mobility " << t.mobility
-                      << "  kingSafety " << t.kingSafety << "  (White minus Black)\n"
+                      << "  kingSafety " << t.kingSafety << "  outposts " << t.outposts << "  rooks " << t.rooks
+                      << "  threats " << t.threats << "  space " << t.space << "  (White minus Black)\n"
                       << "total (White) " << t.total() << ", side to move " << evaluate(pos)
-                      << " cp, phase " << (isEndgame(pos) ? "endgame" : "middlegame") << "\n";
+                      << " cp, phase " << gamePhase(pos) << "/24" << (isEndgame(pos) ? " (basic rule: endgame)" : " (basic rule: middlegame)") << "\n";
         } else if (cmd == "go" || cmd == "engine") {
             // go [depth]        fixed depth (default 3)       go time <ms>   iterative deepening for <ms> milliseconds
             std::string arg;
@@ -158,6 +162,16 @@ int main(int argc, char** argv) {
                 if (!ok) std::cout << "Unknown technique name. Names: pvs asp rfp null lmr fut raz ext sing seeord seeq rep (or none, default, all).\n";
                 else { options = parsed; std::cout << "search techniques: " << options.toString() << "\n"; }
             }
+        } else if (cmd == "evalopts") {
+            std::string rest;
+            std::getline(in, rest);
+            const size_t first = rest.find_first_not_of(" \t");
+            if (first != std::string::npos) {
+                unsigned f = 0;
+                if (!parseEvalFlags(rest.substr(first), f)) { std::cout << "Unknown evaluation feature. Names: taper mobility passed pawns outpost rook kingzone threats space (or none, default, all).\n"; continue; }
+                setEvalFlags(f);
+            }
+            std::cout << "evaluation features: " << evalFlagsToString(evalFlags()) << "\n";
         } else if (cmd == "hash") {
             std::cout << std::hex << std::setfill('0') << "key " << std::setw(16) << hashKey(pos) << "  (placement+side+castling part "
                       << std::setw(16) << pos.baseKey() << ")" << std::dec << std::setfill(' ') << "\n";

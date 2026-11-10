@@ -1,10 +1,11 @@
 // tactics: run an EPD test suite (positions with "bm" best moves) at a fixed node, depth or time budget.
-//   tactics suite.epd [--nodes N] [--depth D] [--ms T] [--opts "pvs,null,..."] [--tt MB] [--verbose] [--emit]
+//   tactics suite.epd [--nodes N] [--depth D] [--ms T] [--opts "pvs,null,..."] [--eval "taper,passed,..."] [--tt MB] [--verbose] [--emit]
 // --emit prints "SOLVED <id> | <fen> | <uci move>" for every solved position (used to build regression sets).
 // A position counts as solved when the engine's move (in SAN) is one of the bm moves. The suite itself is not part
 // of the repository (the classic "Win At Chess" file is widely available); the tool works with any EPD.
 #include "../src/board/attacks.hpp"
 #include "../src/board/fen.hpp"
+#include "../src/eval/evaluate.hpp"
 #include "../src/move/legal.hpp"
 #include "../src/search/search.hpp"
 #include <chrono>
@@ -71,6 +72,7 @@ int main(int argc, char** argv) {
     int64_t ms = 0;
     bool verbose = false, emit = false;
     SearchOptions opts;
+    unsigned evalF = EVAL_BASIC;
     for (int i = 2; i < argc; ++i) {
         const std::string a = argv[i];
         auto next = [&]() { return i + 1 < argc ? std::string(argv[++i]) : std::string(); };
@@ -79,9 +81,11 @@ int main(int argc, char** argv) {
         else if (a == "--ms") ms = std::atoll(next().c_str());
         else if (a == "--tt") ttMb = std::atoi(next().c_str());
         else if (a == "--opts") { bool ok; opts = SearchOptions::fromString(next(), &ok); if (!ok) { std::cerr << "unknown option name\n"; return 1; } }
+        else if (a == "--eval") { if (!parseEvalFlags(next(), evalF)) { std::cerr << "unknown eval flag\n"; return 1; } }
         else if (a == "--verbose") verbose = true;
         else if (a == "--emit") emit = true;
     }
+    setEvalFlags(evalF);
     if (nodes == 0 && ms == 0 && depth >= 64) nodes = 100000;
 
     std::ifstream in(argv[1]);
@@ -129,6 +133,6 @@ int main(int argc, char** argv) {
         else if (verbose) std::cout << "  unsolved " << id << ": played " << san << ", wanted " << best[0] << " (depth " << r.depth << ", score " << r.score << ")\n";
     }
     const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::cout << "TACTICS opts=[" << opts.toString() << "] solved " << solved << "/" << total << "  nodes " << totalNodes << "  " << secs << " s\n";
+    std::cout << "TACTICS opts=[" << opts.toString() << "] eval=[" << evalFlagsToString(evalF) << "] solved " << solved << "/" << total << "  nodes " << totalNodes << "  " << secs << " s\n";
     return 0;
 }

@@ -1,5 +1,5 @@
 // selfplay: node-limited match between two search configurations of this engine.
-//   selfplay --a "<opts>" --b "<opts>" [--nodes N] [--pairs P] [--start S] [--plies K] [--tt MB] [--maxsec T] [--seed X]
+//   selfplay --a "<opts>" --b "<opts>" [--ea "<evalflags>" --eb "<evalflags>"] [--nodes N] [--pairs P] [--start S] [--plies K] [--tt MB] [--maxsec T] [--seed X]
 // Every opening is played twice with the colours swapped. Every move gets the same node budget, so the result does
 // not depend on timing or machine load and can be reproduced exactly; --start lets a long match be run in pieces.
 // A wins-draws-losses line, the score and an Elo estimate with a 95% interval are printed (the interval is wide for
@@ -29,6 +29,7 @@ struct Rng {
 
 struct Player {
     SearchOptions opts;
+    unsigned evalFlags = EVAL_BASIC;  // Stage 18: the evaluation features this player uses
     TranspositionTable tt;
     explicit Player(size_t mb) : tt(mb) {}
 };
@@ -61,6 +62,7 @@ int playGame(const Position& opening, Player& a, Player& b, bool aIsWhite, uint6
         lim.tt = &p.tt;
         lim.options = p.opts;
         lim.history = history;
+        setEvalFlags(p.evalFlags);  // the evaluation is a process-wide setting: select this player's before it searches
         const SearchResult r = searchIterative(pos, lim);
         if (!r.hasMove) return 0;
 
@@ -85,7 +87,7 @@ int playGame(const Position& opening, Player& a, Player& b, bool aIsWhite, uint6
 
 int main(int argc, char** argv) {
     initAttackTables();
-    std::string optsA = "none", optsB = "none";
+    std::string optsA = "none", optsB = "none", evalA = "none", evalB = "none";
     uint64_t nodes = 10000;
     int pairs = 20, start = 0, openingPlies = 6, ttMb = 8, maxPlies = 200;
     double maxSec = 1e9;
@@ -95,6 +97,8 @@ int main(int argc, char** argv) {
         auto next = [&]() { return i + 1 < argc ? std::string(argv[++i]) : std::string(); };
         if (a == "--a") optsA = next();
         else if (a == "--b") optsB = next();
+        else if (a == "--ea") evalA = next();
+        else if (a == "--eb") evalB = next();
         else if (a == "--nodes") nodes = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--pairs") pairs = std::atoi(next().c_str());
         else if (a == "--start") start = std::atoi(next().c_str());
@@ -108,6 +112,7 @@ int main(int argc, char** argv) {
     A.opts = SearchOptions::fromString(optsA, &okA);
     B.opts = SearchOptions::fromString(optsB, &okB);
     if (!okA || !okB) { std::cerr << "unknown option name\n"; return 1; }
+    if (!parseEvalFlags(evalA, A.evalFlags) || !parseEvalFlags(evalB, B.evalFlags)) { std::cerr << "unknown eval flag\n"; return 1; }
 
     int w = 0, d = 0, l = 0, done = 0;
     const auto t0 = std::chrono::steady_clock::now();
@@ -126,7 +131,7 @@ int main(int argc, char** argv) {
                 if (legal.size() == 0) { ok = false; break; }
                 makeMove(p, legal[rng.next() % legal.size()]);
             }
-            if (ok && std::abs(evaluate(p)) <= 120) { opening = p; break; }
+            if (ok && std::abs(evaluate(p, EVAL_BASIC)) <= 120) { opening = p; break; }  // fixed evaluation: same openings for every comparison
             if (attempt == 99) opening = p;
         }
         for (int colour = 0; colour < 2; ++colour) {
@@ -145,7 +150,7 @@ int main(int argc, char** argv) {
         const double hi = std::min(0.999, score + 1.96 * se), lo = std::max(0.001, score - 1.96 * se);
         err = (-400.0 * std::log10(1.0 / hi - 1.0) + 400.0 * std::log10(1.0 / lo - 1.0)) / 2.0;
     }
-    std::cout << "RESULT pairs " << start << ".." << start + done - 1 << " nodes " << nodes << "  A=[" << A.opts.toString() << "] vs B=[" << B.opts.toString()
+    std::cout << "RESULT pairs " << start << ".." << start + done - 1 << " nodes " << nodes << "  A=[" << A.opts.toString() << " | eval " << evalFlagsToString(A.evalFlags) << "] vs B=[" << B.opts.toString() << " | eval " << evalFlagsToString(B.evalFlags)
               << "]  A: +" << w << " =" << d << " -" << l << "  score " << 100.0 * score << "%  Elo(A-B) " << elo << " +-" << err << "\n";
     return 0;
 }
