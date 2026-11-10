@@ -54,7 +54,7 @@ static void listMoves(const Position& pos) {
 
 int main(int argc, char** argv) {
     initAttackTables();
-    struct Played { Move move; UndoInfo undo; };
+    struct Played { Move move; UndoInfo undo; uint64_t keyBefore; };  // keyBefore: hash of the position before the move (repetition history)
     Position pos;
     pos.setStartingPosition();
     std::vector<Played> played;
@@ -68,6 +68,12 @@ int main(int argc, char** argv) {
     }
     history.reset(pos);
     TranspositionTable tt(16);  // Stage 16: shared by every go/engine command, so later searches reuse earlier work
+    SearchOptions options = SearchOptions::engineDefault();  // Stage 17: search techniques ('options' shows or changes them)
+    auto gameKeys = [&]() {     // positions played so far, oldest first: the search treats a repetition of one as a draw
+        std::vector<uint64_t> keys;
+        for (const Played& pl : played) keys.push_back(pl.keyBefore);
+        return keys;
+    };
 
     std::cout << "Type a move like e2e4 (promotion: e7e8q). 'help' for commands.\n";
     show(pos, history);
@@ -88,6 +94,8 @@ int main(int argc, char** argv) {
                          "  engine [d] | engine time <ms>   let the engine play its best move\n"
                          "  hash        show the Zobrist key of the position (full key and incremental part)\n"
                          "  hashfull    transposition-table fill and hit statistics   clearhash   empty the table\n"
+                         "  options [list]   show or set the search techniques: none, default, all, or e.g. pvs,null,lmr\n"
+                         "                   (names: pvs asp rfp null lmr fut raz ext sing seeord seeq rep; '-x' removes one)\n"
                          "  undo        take back the last move\n"
                          "  fen <FEN>   load a position\n"
                          "  new         start position\n"
@@ -110,6 +118,8 @@ int main(int argc, char** argv) {
                 SearchLimits limits;
                 limits.movetimeMs = ms;
                 limits.tt = &tt;
+                limits.options = options;
+                limits.history = gameKeys();
                 r = searchIterative(pos, limits, [](const SearchInfo& i) {
                     std::cout << "  info depth " << i.depth << " score " << i.score << " nodes " << i.nodes
                               << " time " << static_cast<long>(i.timeMs) << "ms pv";
@@ -122,7 +132,7 @@ int main(int argc, char** argv) {
                     try { depth = std::stoi(arg); } catch (...) { depth = 0; }
                 }
                 if (depth < 1 || depth > 10) { std::cout << "Depth must be 1-10, or use: " << cmd << " time <ms>\n"; continue; }
-                r = searchTT(pos, depth, tt);
+                r = searchOpt(pos, depth, options, &tt, TT_DEPTH_GE, gameKeys());
             }
             if (!r.hasMove) { std::cout << "No legal move (game over).\n"; continue; }
             std::cout << "best " << r.bestMove.toString() << "  depth " << r.depth << "  score " << r.score;
@@ -131,9 +141,22 @@ int main(int argc, char** argv) {
             for (const Move& m : r.pv) std::cout << ' ' << m.toString();
             std::cout << "\n";
             if (cmd == "engine") {
-                played.push_back({r.bestMove, makeMove(pos, r.bestMove)});
+                const uint64_t keyBefore = hashKey(pos);
+                played.push_back({r.bestMove, makeMove(pos, r.bestMove), keyBefore});
                 history.push(pos);
                 show(pos, history);
+            }
+        } else if (cmd == "options") {
+            std::string rest;
+            std::getline(in, rest);
+            const size_t first = rest.find_first_not_of(" \t");
+            if (first == std::string::npos) {
+                std::cout << "search techniques: " << options.toString() << "\n";
+            } else {
+                bool ok = false;
+                const SearchOptions parsed = SearchOptions::fromString(rest.substr(first), &ok);
+                if (!ok) std::cout << "Unknown technique name. Names: pvs asp rfp null lmr fut raz ext sing seeord seeq rep (or none, default, all).\n";
+                else { options = parsed; std::cout << "search techniques: " << options.toString() << "\n"; }
             }
         } else if (cmd == "hash") {
             std::cout << std::hex << std::setfill('0') << "key " << std::setw(16) << hashKey(pos) << "  (placement+side+castling part "
@@ -178,7 +201,8 @@ int main(int argc, char** argv) {
                 continue;
             }
             const Move move = *found;
-            played.push_back({move, makeMove(pos, move)});
+            const uint64_t keyBefore = hashKey(pos);
+            played.push_back({move, makeMove(pos, move), keyBefore});
             history.push(pos);
             if (!pos.isConsistent()) std::cout << "INTERNAL ERROR: inconsistent position!\n";
             show(pos, history);

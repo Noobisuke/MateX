@@ -85,3 +85,22 @@ void unmakeMove(Position& pos, const Move& m, const UndoInfo& undo) {
         pos.putPiece(undo.captured, m.to);
     }
 }
+
+NullUndo makeNullMove(Position& pos) {
+    NullUndo u;
+    u.enPassantSquare = pos.enPassantSquare();
+    u.halfmoveClock = pos.halfmoveClock();
+    u.fullmoveNumber = pos.fullmoveNumber();
+    if (pos.sideToMove() == BLACK) pos.setFullmoveNumber(u.fullmoveNumber + 1);
+    pos.setSideToMove(~pos.sideToMove());
+    pos.setEnPassantSquare(NO_SQUARE);
+    pos.setHalfmoveClock(u.halfmoveClock + 1);
+    return u;
+}
+
+void unmakeNullMove(Position& pos, const NullUndo& undo) {
+    pos.setSideToMove(~pos.sideToMove());
+    pos.setEnPassantSquare(undo.enPassantSquare);
+    pos.setHalfmoveClock(undo.halfmoveClock);
+    pos.setFullmoveNumber(undo.fullmoveNumber);
+}

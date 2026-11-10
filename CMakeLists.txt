@@ -30,6 +30,7 @@ set(ENGINE_SOURCES
     src/perft/suite.cpp
     src/eval/evaluate.cpp
     src/search/tt.cpp
+    src/search/see.cpp
     src/search/search.cpp
 )
 
@@ -54,6 +55,10 @@ add_executable(bench_search tools/bench_search.cpp ${ENGINE_SOURCES})
 # --- Hash dump tool (batch cross-check against python-chess)
 add_executable(hash_cli tools/hash_cli.cpp ${ENGINE_SOURCES})
 
+# --- Tactical test-suite runner (EPD files with best moves) and node-limited self-play matches (Stage 17)
+add_executable(tactics tools/tactics.cpp ${ENGINE_SOURCES})
+add_executable(selfplay tools/selfplay.cpp ${ENGINE_SOURCES})
+
 # --- Transposition-table benchmark (nodes with/without TT, replacement policies)
 add_executable(bench_tt tools/bench_tt.cpp ${ENGINE_SOURCES})
 
@@ -74,6 +79,7 @@ add_executable(test_stage13 tests/test_stage13.cpp ${ENGINE_SOURCES})
 add_executable(test_stage14 tests/test_stage14.cpp ${ENGINE_SOURCES})
 add_executable(test_stage15 tests/test_stage15.cpp ${ENGINE_SOURCES})
 add_executable(test_stage16 tests/test_stage16.cpp ${ENGINE_SOURCES})
+add_executable(test_stage17 tests/test_stage17.cpp ${ENGINE_SOURCES})
 add_executable(test_regression tests/test_regression.cpp ${ENGINE_SOURCES})
 
 enable_testing()
@@ -93,4 +99,5 @@ add_test(NAME Stage13QuiescenceTests COMMAND test_stage13)
 add_test(NAME Stage14OrderingTests COMMAND test_stage14)
 add_test(NAME Stage15IterativeTests COMMAND test_stage15)
 add_test(NAME Stage16HashTTTests COMMAND test_stage16)
+add_test(NAME Stage17AdvancedSearchTests COMMAND test_stage17)
 add_test(NAME RegressionTests COMMAND test_regression)
