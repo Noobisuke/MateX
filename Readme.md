@@ -6,8 +6,8 @@ and the move generator is checked against independently computed reference count
 
 **Current state:** a complete rule-correct move generator, a tapered static evaluation with nine optional features,
 and an alpha-beta search with quiescence, move ordering, iterative deepening, a transposition table and the usual
-modern techniques (PVS, null move, LMR, pruning, SEE). It plays legal, sensible chess from the command line.
-A UCI interface (to plug it into a chess GUI) is planned but not built yet.
+modern techniques (PVS, null move, LMR, pruning, SEE). It plays legal, sensible chess from the command line and,
+through its UCI interface (`matex`), in any chess GUI such as Cute Chess or Arena.
 
 ## Features
 
@@ -22,6 +22,8 @@ A UCI interface (to plug it into a chess GUI) is planned but not built yet.
   history), iterative deepening with time/node limits, Zobrist hashing and a transposition table, plus principal
   variation search, aspiration windows, null move, late move reductions, futility and reverse futility pruning,
   check extensions, static exchange evaluation and repetition detection. Every technique is an option.
+- **UCI:** the `matex` executable speaks the standard protocol (time controls, `go infinite` / `stop`, options,
+  repetition history), searches on its own thread so it stays responsive, and has debug commands (`d`, `eval`, `perft`, `bench`).
 - **Tools:** an interactive `play` program, `perft_cli`, benchmarks, a tactical-suite runner (`tactics`), a self-play
   match tool (`selfplay`), and one test program per stage.
 
@@ -44,6 +46,40 @@ mingw32-make
 mkdir build && cd build
 cmake .. && make
 ```
+
+### Use it in a chess GUI (UCI)
+
+Build as above, then add the `matex` program (`matex.exe` on Windows) as a UCI engine in your GUI
+(Cute Chess: *Tools > Settings > Engines > +*; Arena: *Engines > Install new engine*). Nothing else is needed.
+You can also talk to it by hand:
+
+```
+$ ./matex
+uci                                  <- engine lists its options and answers "uciok"
+position startpos moves e2e4 e7e5
+go movetime 1000                     <- or: go depth 8 / go wtime 60000 btime 60000 winc 1000 binc 1000
+info depth 9 score cp 24 nodes 41022 nps 540000 time 76 hashfull 4 pv g1f3 b8c6 ...   (numbers will differ)
+bestmove g1f3
+quit
+```
+
+Supported: `uci`, `isready`, `ucinewgame`, `position`, `go` (`depth`, `nodes`, `movetime`, `wtime`/`btime`/`winc`/`binc`/`movestogo`,
+`mate`, `infinite`), `stop`, `setoption`, `debug`, `quit`. Not supported: pondering and `searchmoves` (accepted and explained, then ignored).
+
+| Option | Default | Meaning |
+|---|---|---|
+| `Hash` | 16 | transposition table size in MB (1 to 4096) |
+| `Clear Hash` | | empty the table |
+| `Move Overhead` | 30 | milliseconds kept back for GUI and pipe delays |
+| `Techniques` | `default` | search techniques, e.g. `none`, `pvs,null`, `default,-lmr` |
+| `EvalFeatures` | `default` | evaluation features, e.g. `none`, `taper,passed`, `all,-space` |
+| `Debug Log File` | empty | file that records everything the engine reads (`>>`) and writes (`<<`) |
+
+Extra commands for debugging: `d` (board, FEN, key), `eval`, `perft N`, `divide N`, `bench [depth]`, `options`.
+`./matex bench 5` runs a fixed set of eight positions and prints the total node count, which only changes if the search
+or evaluation changes.
+
+### Play it in the terminal
 
 Then play against the engine:
 
@@ -82,6 +118,7 @@ best b8c6  depth 4  score -37  nodes 7449  pv b8c6 b1c3 g8f6 g1f3
 ./perft_cli --suite            # the whole perft suite (about 7 seconds)
 ./bench_search 4               # how much each move-ordering technique saves
 ./bench_tt 5                   # what the transposition table buys
+./matex bench 5                # fixed benchmark: total nodes and speed (the UCI engine itself is ./matex)
 ./chess_engine "<FEN>"         # print and validate any position
 ./tactics wac.epd --nodes 20000 --opts default --eval default   # solve an EPD test suite at a node budget
 ./selfplay --a default --b pvs --nodes 10000 --pairs 22         # node-limited match between two configurations
@@ -91,14 +128,14 @@ best b8c6  depth 4  score -37  nodes 7449  pv b8c6 b1c3 g8f6 g1f3
 
 ## Testing
 
-Each stage has its own test program (`test_stage1` to `test_stage18`), plus `test_regression` for bugs found
+Each stage has its own test program (`test_stage1` to `test_stage19`), plus `test_regression` for bugs found
 in audits. All commands below are run from the `build` folder after building. On Windows (MinGW) run the
 programs as `test_stage1.exe`, or just `test_stage1` in PowerShell/cmd.
 
 ### Run everything
 
 ```bash
-ctest --output-on-failure        # all 19 test programs, about 4 minutes
+ctest --output-on-failure        # all 20 test programs, about 4 minutes
 ctest -j4 --output-on-failure    # same, 4 at a time (faster)
 ctest -N                         # just list the test names
 ```
@@ -133,18 +170,26 @@ ctest -R Stage9PerftTests --output-on-failure  # same test through CTest
 | 16 | `./test_stage16` | `Stage16HashTTTests` | Zobrist keys, transposition table, replacement policies, search with the table | ~38 s |
 | 17 | `./test_stage17` | `Stage17AdvancedSearchTests` | Each search technique: options-off equals Stage 16, PVS / SEE ordering / aspiration keep the score, SEE against an exhaustive reference, null move, repetition, mates, tactics (`./test_stage17 see null` runs named sections) | ~100 s |
 | 18 | `./test_stage18` | `Stage18EvaluationTests` | Tapered evaluation and each feature: no features equals a frozen Stage 10 copy, colour / mirror symmetry, features change only their own term, hand-computed values, search still sound (`./test_stage18 terms phase` runs named sections) | ~11 s |
+| 19 | `./test_stage19` | `Stage19UciTests` | UCI front end: `go` parsing, the time-allocation rule, `position` handling (castling, en passant, promotion, illegal input), `go` with every limit, `stop` / `quit` / end of input, options, `perft` / `bench`, thousands of garbage lines (`./test_stage19 search options` runs named sections) | ~4 s |
 | - | `./test_regression` | `RegressionTests` | Bugs found in earlier audits, cross-checked against python-chess | <1 s |
 
 \*Approximate, on a Linux build; your machine may differ. A passing program ends with no `FAIL:` lines and exits
 with code 0 (`echo $?` on Linux/macOS, `echo %errorlevel%` in cmd).
+
+The UCI engine can also be checked from outside with python-chess, which plays whole games against a random mover through the real
+`matex` program, the way a GUI would (needs `pip install chess`; not part of CTest):
+
+```bash
+py tests\uci_check.py build\matex.exe
+```
 
 ### Run groups of stages
 
 ```bash
 ctest -R "Stage[1-8]Tests"                      # fast rule tests only (stages 1-8)
 ctest -R "Stage(9|10)" --output-on-failure      # perft and evaluation
-ctest -R "Stage1[1-8]" --output-on-failure      # stages 11-18 (search and evaluation)
-ctest -E "Stage1[2-7]"                          # everything except the slow search tests
+ctest -R "Stage1[1-9]" --output-on-failure      # stages 11-19 (search, evaluation, UCI)
+ctest -E "Stage1[2-7]"                          # everything except the slow search tests (12-17)
 ```
 
 ### Other checks (not part of CTest)
@@ -169,7 +214,9 @@ src/
   perft/    perft, divide, detailed statistics, the standard suite
   eval/     static evaluation (basic + tapered features)
   search/   alpha-beta, quiescence, ordering, iterative deepening, transposition table, SEE, advanced techniques
+  uci/      UCI protocol, time management
   main.cpp  command-line position inspector
+  uci_main.cpp  the `matex` UCI engine program
 tools/      play, perft_cli, eval_cli, search_cli, bench_search, bench_tt, hash_cli, tactics, selfplay
 tests/      one test program per stage, plus regression tests
 docs/       roadmap, rule checklist, detailed stage notes
@@ -197,7 +244,7 @@ docs/       roadmap, rule checklist, detailed stage notes
 | 16 | Zobrist hashing and transposition table | Done |
 | 17 | Advanced search (PVS, null move, LMR, pruning, SEE, ...) | Done |
 | 18 | Advanced evaluation (tapering and nine features) | Done |
-| 19 | UCI protocol | Planned |
+| 19 | UCI protocol and engine infrastructure | Done |
 | 20 | Final strength work | Planned |
 
 ## Design in brief
@@ -208,7 +255,7 @@ docs/       roadmap, rule checklist, detailed stage notes
 - Scores are in centipawns from the side to move's point of view; mate scores encode the distance to mate.
 - Rule: no speed-up is claimed without a measurement.
 
-More detail, stage by stage (including the Stage 17 and 18 measurements), is in [docs/STAGE_NOTES.md](docs/STAGE_NOTES.md). The rule-by-rule proof of
+More detail, stage by stage (including the Stage 17 and 18 measurements and the UCI notes), is in [docs/STAGE_NOTES.md](docs/STAGE_NOTES.md). The rule-by-rule proof of
 correctness is in [docs/RULE_CHECKLIST.md](docs/RULE_CHECKLIST.md).
 
 ## Known limits
@@ -216,7 +263,7 @@ correctness is in [docs/RULE_CHECKLIST.md](docs/RULE_CHECKLIST.md).
 - Search techniques and evaluation features were tuned by short self-play matches; single features are often within
   the measurement noise (about +-40 Elo per 200 games), so some choices are "not shown to hurt", not "proven to help".
 - The halfmove clock is not part of the hash key (the 50-move rule depends on the path, as in other engines).
-- No UCI interface yet, so it cannot be loaded into a chess GUI.
+- No pondering, no multi-threaded search, no opening book or endgame tablebases; a single search thread plus the thread that reads commands.
 
 ## Contributing
 

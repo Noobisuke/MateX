@@ -10,6 +10,12 @@ endif()
 
 set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 
+# Stage 19: the UCI engine searches on a worker thread (std::thread needs -pthread on Linux).
+find_package(Threads)
+if(Threads_FOUND)
+    link_libraries(Threads::Threads)
+endif()
+
 # --- Core engine sources (grows stage by stage) -----------------------------
 set(ENGINE_SOURCES
     src/board/types.cpp
@@ -32,10 +38,15 @@ set(ENGINE_SOURCES
     src/search/tt.cpp
     src/search/see.cpp
     src/search/search.cpp
+    src/uci/timeman.cpp
+    src/uci/uci.cpp
 )
 
 # --- Main executable (manual/visual inspection) -----------------------------
 add_executable(chess_engine src/main.cpp ${ENGINE_SOURCES})
+
+# --- The UCI engine (Stage 19): run this from a chess GUI ---------------------
+add_executable(matex src/uci_main.cpp ${ENGINE_SOURCES})
 
 # --- Interactive move-playing tool (manual checking)
 add_executable(play tools/play.cpp ${ENGINE_SOURCES})
@@ -81,6 +92,7 @@ add_executable(test_stage15 tests/test_stage15.cpp ${ENGINE_SOURCES})
 add_executable(test_stage16 tests/test_stage16.cpp ${ENGINE_SOURCES})
 add_executable(test_stage17 tests/test_stage17.cpp ${ENGINE_SOURCES})
 add_executable(test_stage18 tests/test_stage18.cpp ${ENGINE_SOURCES})
+add_executable(test_stage19 tests/test_stage19.cpp ${ENGINE_SOURCES})
 add_executable(test_regression tests/test_regression.cpp ${ENGINE_SOURCES})
 
 enable_testing()
@@ -102,4 +114,5 @@ add_test(NAME Stage15IterativeTests COMMAND test_stage15)
 add_test(NAME Stage16HashTTTests COMMAND test_stage16)
 add_test(NAME Stage17AdvancedSearchTests COMMAND test_stage17)
 add_test(NAME Stage18EvaluationTests COMMAND test_stage18)
+add_test(NAME Stage19UciTests COMMAND test_stage19)
 add_test(NAME RegressionTests COMMAND test_regression)
