@@ -19,6 +19,7 @@
 //
 // Replacement: when a slot is needed, which entry is thrown away? Four policies, compared by bench_tt.
 #include "../move/move.hpp"
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -77,19 +78,33 @@ public:
     int hashfull() const;               // permille (0..1000) of a sample of entries written by the current search
 
     // Statistics (reset by clear()).
-    uint64_t probes() const { return probes_; }
-    uint64_t hits() const { return hits_; }
-    uint64_t stores() const { return stores_; }
+    uint64_t probes() const { return probes_.load(std::memory_order_relaxed); }
+    uint64_t hits() const { return hits_.load(std::memory_order_relaxed); }
+    uint64_t stores() const { return stores_.load(std::memory_order_relaxed); }
 
 private:
     size_t clusterBase(uint64_t key) const { return static_cast<size_t>(key & mask_) & ~(clusterSize_ - 1); }
     static size_t clusterSizeOf(TTReplace p);
 
-    std::vector<TTEntry> table_;
+    // Stage 20: the table is shared by the Lazy SMP search threads, which read and write it without locks. A slot is two
+    // 64-bit words, stored as (key ^ data, data) with relaxed atomics (plain loads and stores on x86-64, so no speed
+    // cost). A reader decodes key = word0 ^ word1: if another thread overwrote one word between the two loads, the
+    // decoded key no longer matches and the entry is simply treated as a miss ("lockless XOR" hashing).
+    struct Slot {
+        std::atomic<uint64_t> keyXorData{0};
+        std::atomic<uint64_t> data{0};
+    };
+    static uint64_t packData(const TTEntry& e);
+    static TTEntry unpack(uint64_t keyXorData, uint64_t data);
+    TTEntry load(size_t i) const;
+    void put(size_t i, const TTEntry& e);
+
+    std::vector<Slot> table_;
     size_t mask_ = 0;          // table_.size() - 1 (size is a power of two)
     size_t clusterSize_ = 4;
     TTReplace policy_;
     unsigned gen_ = 0;         // 0..63
-    mutable uint64_t probes_ = 0, hits_ = 0;
-    uint64_t stores_ = 0;
+    // Statistics: relaxed load+store (not fetch_add): race-free, cheap, and may lose a count when threads collide.
+    mutable std::atomic<uint64_t> probes_{0}, hits_{0};
+    std::atomic<uint64_t> stores_{0};
 };

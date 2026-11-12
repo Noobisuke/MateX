@@ -3,6 +3,9 @@ build/
 cmake-build-*/
 out/
 
+# Games Files & Other files: Openings, Tablebases
+others/
+
 # CMake generated files (in case of in-source builds)
 CMakeCache.txt
 CMakeFiles/

@@ -1,23 +1,6 @@
 #include "special.hpp"
 #include "../board/attacks.hpp"
 
-namespace {
-
-// Rights that are lost when a move starts from, or ends on, this square.
-int rightsLostAt(int sq) {
-    switch (sq) {
-        case E1: return WHITE_KINGSIDE | WHITE_QUEENSIDE;
-        case A1: return WHITE_QUEENSIDE;
-        case H1: return WHITE_KINGSIDE;
-        case E8: return BLACK_KINGSIDE | BLACK_QUEENSIDE;
-        case A8: return BLACK_QUEENSIDE;
-        case H8: return BLACK_KINGSIDE;
-        default: return 0;
-    }
-}
-
-}  // namespace
-
 bool castlingPathSafe(const Position& pos, const Move& move) {
     if (!move.isCastle()) return true;
 
@@ -43,11 +26,6 @@ CastlingRights effectiveCastlingRights(const Position& pos) {
     if ((stored & BLACK_QUEENSIDE) && pos.pieceOn(E8) == BLACK_KING && pos.pieceOn(A8) == BLACK_ROOK)
         out |= BLACK_QUEENSIDE;
     return static_cast<CastlingRights>(out);
-}
-
-CastlingRights castlingRightsAfter(CastlingRights rights, const Move& move) {
-    const int lost = rightsLostAt(move.from) | rightsLostAt(move.to);
-    return static_cast<CastlingRights>(rights & ~lost);
 }
 
 int enPassantSquareAfter(const Move& move) {

@@ -9,6 +9,7 @@
 
 #include "../board/position.hpp"
 #include "../move/move.hpp"
+#include "threads.hpp"
 #include "tt.hpp"
 #include <cstdint>
 #include <atomic>
@@ -155,6 +156,8 @@ struct SearchLimits {
     TTMode ttMode = TT_DEPTH_GE;
     SearchOptions options;                   // Stage 17: advanced techniques (default: all off = Stage 16 behaviour)
     std::vector<uint64_t> history;           // keys of the positions before the root, oldest first (repetition)
+    int threads = 1;                         // Stage 20: Lazy SMP. 1 = the plain single-thread search (unchanged).
+                                             // >1 needs a table (limits.tt) and std::thread; otherwise it is ignored.
 };
 
 struct SearchInfo {
@@ -166,6 +169,11 @@ struct SearchInfo {
 };
 using InfoCallback = std::function<void(const SearchInfo&)>;
 
+// Stage 20, Lazy SMP (threads > 1): the calling thread searches exactly as before and is the only one that reports and
+// decides; threads-1 helpers search the same position independently (own Position, killers, history) and communicate
+// ONLY through the shared transposition table, with a different iteration schedule so they do not all walk the same
+// tree. `result.nodes` and the nodes in `info` then count all threads. Not deterministic (thread timing changes what
+// the table holds), but every returned move is a legal move from a completed full-window iteration of the main thread.
 // Searches depth 1, 2, 3, ... until a limit is hit. Always returns the result of the last COMPLETED iteration, so
 // the move is legal and fully searched even when interrupted. If even depth 1 cannot finish (very tight limit), a
 // legal fallback move is returned with depth 0 and the static evaluation. `result.depth` is the last completed depth, `result.interrupted` says whether a limit stopped it early (not set when a mate was found).
@@ -173,4 +181,4 @@ using InfoCallback = std::function<void(const SearchInfo&)>;
 SearchResult searchIterative(Position& pos, const SearchLimits& limits, const InfoCallback& info = nullptr);
 
 // Simple clock allocation: time for this move from the remaining time, the increment and moves to go (0 = unknown).
-int64_t allocateTimeMs(int64_t timeLeftMs, int64_t incrementMs, int movesToGo = 0);
+int64_t allocateTimeMs(int64_t timeLeftMs, int64_t incrementMs, int movesToGo = 0);

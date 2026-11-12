@@ -42,8 +42,35 @@ public:
     Bitboard occupancyAll() const { return occupancyAll_; }
 
     // --- Piece placement mutation ---
-    void putPiece(Piece p, int sq);
-    void removePiece(int sq);
+    // Inline since Stage 20: make/unmake call these four times per move.
+    void putPiece(Piece p, int sq) {
+        // NO_PIECE (12) is not a valid index into pieceBB_/occupancyByColor_; placing "no piece"
+        // means emptying the square. (Audit fix: this used to write out of bounds.)
+        if (p == NO_PIECE) {
+            removePiece(sq);
+            return;
+        }
+        // Defensive: if a piece already sits here, remove it first so the
+        // bitboards/mailbox never get out of sync.
+        if (board_[sq] != NO_PIECE) {
+            removePiece(sq);
+        }
+        board_[sq] = p;
+        setBit(pieceBB_[p], sq);
+        // Incremental occupancy update (Stage 7): touch one bit instead of rebuilding.
+        setBit(occupancyByColor_[colorOf(p)], sq);
+        setBit(occupancyAll_, sq);
+        baseKey_ ^= zobrist::KEYS.piece[p][sq];
+    }
+    void removePiece(int sq) {
+        Piece p = board_[sq];
+        if (p == NO_PIECE) return;
+        board_[sq] = NO_PIECE;
+        clearBit(pieceBB_[p], sq);
+        clearBit(occupancyByColor_[colorOf(p)], sq);
+        clearBit(occupancyAll_, sq);
+        baseKey_ ^= zobrist::KEYS.piece[p][sq];
+    }
 
     // --- State accessors ---
     Color sideToMove() const { return sideToMove_; }
@@ -93,4 +120,4 @@ private:
     int fullmoveNumber_;
 
     uint64_t baseKey_;  // see baseKey(); 0 for the empty board with White to move and no castling rights
-};
+};

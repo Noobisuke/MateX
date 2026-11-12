@@ -10,6 +10,13 @@ endif()
 
 set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 
+# Stage 20: use the POPCNT instruction instead of a library call for popCount(). Every x86-64 CPU since 2008 has it;
+# switch it off (cmake -DMATEX_POPCNT=OFF ..) only for a very old CPU. Other architectures are left alone.
+option(MATEX_POPCNT "Compile with -mpopcnt on x86-64" ON)
+if(MATEX_POPCNT AND CMAKE_SYSTEM_PROCESSOR MATCHES "[xX]86_64|AMD64|amd64" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-mpopcnt)
+endif()
+
 # Stage 19: the UCI engine searches on a worker thread (std::thread needs -pthread on Linux).
 find_package(Threads)
 if(Threads_FOUND)
@@ -93,6 +100,7 @@ add_executable(test_stage16 tests/test_stage16.cpp ${ENGINE_SOURCES})
 add_executable(test_stage17 tests/test_stage17.cpp ${ENGINE_SOURCES})
 add_executable(test_stage18 tests/test_stage18.cpp ${ENGINE_SOURCES})
 add_executable(test_stage19 tests/test_stage19.cpp ${ENGINE_SOURCES})
+add_executable(test_stage20 tests/test_stage20.cpp ${ENGINE_SOURCES})
 add_executable(test_regression tests/test_regression.cpp ${ENGINE_SOURCES})
 
 enable_testing()
@@ -115,4 +123,5 @@ add_test(NAME Stage16HashTTTests COMMAND test_stage16)
 add_test(NAME Stage17AdvancedSearchTests COMMAND test_stage17)
 add_test(NAME Stage18EvaluationTests COMMAND test_stage18)
 add_test(NAME Stage19UciTests COMMAND test_stage19)
-add_test(NAME RegressionTests COMMAND test_regression)
+add_test(NAME Stage20PerformanceSmpTests COMMAND test_stage20)
+add_test(NAME RegressionTests COMMAND test_regression)

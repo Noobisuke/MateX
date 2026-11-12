@@ -6,39 +6,44 @@
 //
 // Determines whether a given square is attacked by a given color,
 // regardless of whose turn it is and regardless of whether a piece
-// actually sits on that square. This is the foundation for check
-// detection, legal move filtering (Stage 5), and castling legality
-// (Stage 6).
+// actually sits on that square.
+//
+// Stage 20: the attack lookups are inline table reads. Knight, king and pawn attacks are plain tables; bishop and
+// rook attacks use "magic bitboards": the occupancy bits that matter on the piece's rays are multiplied by a
+// per-square magic number and the top bits index a precomputed attack table.
 // ---------------------------------------------------------------------
 
-// Must be called once before any attack queries (sets up the
-// precomputed knight/king attack tables). Safe to call multiple times.
+// Builds the tables. Runs automatically before main(); calling it again is harmless.
 void initAttackTables();
 
-// True if `square` is attacked by any piece of color `byColor` in the
-// current position `pos`. "Attacked" means a piece of that color could
-// capture on that square right now, ignoring whose turn it actually is
-// and ignoring whether doing so would expose that side's own king.
 bool isSquareAttacked(const Position& pos, int square, Color byColor);
-
-// True if the side `color`'s king is currently attacked by the
-// opposing color. Requires that `color` actually has a king on the
-// board (always true for any legitimately-reached position).
 bool isInCheck(const Position& pos, Color color);
 
-// --- Lower-level helpers, exposed for testing and future reuse -------------
+namespace attack_detail {
+struct Magic {
+    Bitboard mask;          // the squares on the rays whose occupancy matters (board edges excluded)
+    Bitboard magic;
+    const Bitboard* table;  // 2^popcount(mask) entries for this square
+    int shift;              // 64 - popcount(mask)
+};
+extern Bitboard knightTable[64];
+extern Bitboard kingTable[64];
+extern Bitboard pawnTable[2][64];
+extern Magic bishopMagic[64];
+extern Magic rookMagic[64];
+}  // namespace attack_detail
 
-// Pseudo-attack squares for a knight standing on `sq`, ignoring occupancy.
-Bitboard knightAttacksFrom(int sq);
+// --- Lower-level helpers, exposed for testing and reuse ---
+inline Bitboard knightAttacksFrom(int sq) { return attack_detail::knightTable[sq]; }
+inline Bitboard kingAttacksFrom(int sq) { return attack_detail::kingTable[sq]; }
+inline Bitboard pawnAttacksFrom(int sq, Color c) { return attack_detail::pawnTable[c][sq]; }
 
-// Pseudo-attack squares for a king standing on `sq`, ignoring occupancy.
-Bitboard kingAttacksFrom(int sq);
-
-// Squares a pawn of color `c` standing on `sq` attacks (diagonals only).
-Bitboard pawnAttacksFrom(int sq, Color c);
-
-// Sliding-piece attacks from `sq` given the board's full occupancy,
-// stopping at (and including) the first blocker in each direction.
-Bitboard bishopAttacksFrom(int sq, Bitboard occupied);
-Bitboard rookAttacksFrom(int sq, Bitboard occupied);
-Bitboard queenAttacksFrom(int sq, Bitboard occupied);
+inline Bitboard bishopAttacksFrom(int sq, Bitboard occupied) {
+    const attack_detail::Magic& m = attack_detail::bishopMagic[sq];
+    return m.table[((occupied & m.mask) * m.magic) >> m.shift];
+}
+inline Bitboard rookAttacksFrom(int sq, Bitboard occupied) {
+    const attack_detail::Magic& m = attack_detail::rookMagic[sq];
+    return m.table[((occupied & m.mask) * m.magic) >> m.shift];
+}
+inline Bitboard queenAttacksFrom(int sq, Bitboard occupied) { return bishopAttacksFrom(sq, occupied) | rookAttacksFrom(sq, occupied); }

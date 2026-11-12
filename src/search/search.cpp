@@ -640,7 +640,10 @@ int64_t allocateTimeMs(int64_t timeLeftMs, int64_t incrementMs, int movesToGo) {
     return std::max<int64_t>(t, 1);
 }
 
-SearchResult searchIterative(Position& pos, const SearchLimits& limits, const InfoCallback& info) {
+// One iterative-deepening search. threadId 0 is the main thread (reports, owns the clock, bumps the table generation);
+// helpers (threadId > 0) skip some depths, never report, and add their node counts to `*extraNodes`.
+static SearchResult iterativeImpl(Position& pos, const SearchLimits& limits, const InfoCallback& info, int threadId,
+                                  std::atomic<uint64_t>* extraNodes) {
     using Clock = std::chrono::steady_clock;
     const auto start = Clock::now();
     auto elapsedMs = [&]() { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
@@ -653,7 +656,7 @@ SearchResult searchIterative(Position& pos, const SearchLimits& limits, const In
     state->opt = limits.options;
     state->gameKeys = limits.history;
     const SearchOptions& opt = limits.options;
-    if (limits.tt) limits.tt->newSearch();  // one generation per search; iterations of one search share it
+    if (limits.tt && threadId == 0 && !extraNodes) limits.tt->newSearch();  // (multi-thread: the driver did it) one generation per search; iterations of one search share it
 
     Control ctl;
     ctl.nodeLimit = limits.maxNodes;
@@ -668,7 +671,14 @@ SearchResult searchIterative(Position& pos, const SearchLimits& limits, const In
     PVLine prevPV;
     bool havePrev = false;
 
+    uint64_t reported = 0;  // helper nodes already added to *extraNodes
+    auto publishNodes = [&]() {
+        if (threadId > 0 && extraNodes) { extraNodes->fetch_add(nodes - reported, std::memory_order_relaxed); reported = nodes; }
+    };
+
     for (int depth = 1; depth <= maxDepth; ++depth) {
+        // Lazy SMP schedule: a helper skips every third depth (a different one per helper) so the threads drift apart.
+        if (threadId > 0 && depth > 3 && (depth + threadId) % 3 == 0) continue;
         PVLine pv;
         // Aspiration windows: from depth aspirationMinDepth on, search a narrow window around the previous score. A score
         // inside the window is exact (identical to the full-window result); outside it, widen on that side and search
@@ -695,6 +705,7 @@ SearchResult searchIterative(Position& pos, const SearchLimits& limits, const In
                 break;
             }
         }
+        publishNodes();
         if (ctl.aborted) {  // discard the unfinished iteration; the previous one stands
             best.interrupted = true;
             break;
@@ -708,7 +719,7 @@ SearchResult searchIterative(Position& pos, const SearchLimits& limits, const In
         if (best.hasMove && limits.tt) extendPVFromTT(pos, best.pv, *limits.tt);  // reporting only: prevPV stays the raw line
         best.nodes = nodes;
         best.timeMs = elapsedMs();
-        if (info) info(SearchInfo{depth, score, nodes, best.timeMs, best.pv});
+        if (info) info(SearchInfo{depth, score, nodes + (extraNodes && threadId == 0 ? extraNodes->load(std::memory_order_relaxed) : 0), best.timeMs, best.pv});
 
         if (!best.hasMove) break;  // root is terminal (mate, stalemate, draw): nothing to search deeper
         prevPV = pv;
@@ -750,3 +761,38 @@ SearchResult searchIterative(Position& pos, const SearchLimits& limits, const In
     best.stats = state->stats;
     return best;
 }
+
+SearchResult searchIterative(Position& pos, const SearchLimits& limits, const InfoCallback& info) {
+#if MATEX_THREADS
+    if (limits.threads > 1 && limits.tt) {
+        const int helpers = std::min(limits.threads, 64) - 1;
+        std::atomic<bool> helperStop{false};
+        std::atomic<uint64_t> extraNodes{0};
+        limits.tt->newSearch();  // once, before any helper starts: the generation counter is not atomic
+        SearchLimits hl = limits;
+        hl.threads = 1;
+        hl.movetimeMs = 0;
+        hl.maxNodes = 0;
+        hl.stop = &helperStop;
+        std::vector<std::thread> pool;
+        // Stops and joins the helpers on every way out of this scope (also if the main search throws).
+        struct Joiner {
+            std::atomic<bool>& stop; std::vector<std::thread>& pool;
+            ~Joiner() { stop.store(true); for (std::thread& t : pool) if (t.joinable()) t.join(); }
+        } joiner{helperStop, pool};
+        // Every helper owns its board, copied HERE before any thread starts (the main thread mutates `pos` as it searches).
+        std::vector<Position> boards(static_cast<size_t>(helpers), pos);
+        for (int t = 1; t <= helpers; ++t)
+            pool.emplace_back([&boards, &hl, &extraNodes, t]() {
+                iterativeImpl(boards[static_cast<size_t>(t - 1)], hl, nullptr, t, &extraNodes);
+            });
+        SearchResult r = iterativeImpl(pos, limits, info, 0, &extraNodes);
+        helperStop.store(true);
+        for (std::thread& t : pool) t.join();
+        pool.clear();
+        r.nodes += extraNodes.load();
+        return r;
+    }
+#endif
+    return iterativeImpl(pos, limits, info, 0, nullptr);
+}

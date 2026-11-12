@@ -24,6 +24,8 @@ through its UCI interface (`matex`), in any chess GUI such as Cute Chess or Aren
   check extensions, static exchange evaluation and repetition detection. Every technique is an option.
 - **UCI:** the `matex` executable speaks the standard protocol (time controls, `go infinite` / `stop`, options,
   repetition history), searches on its own thread so it stays responsive, and has debug commands (`d`, `eval`, `perft`, `bench`).
+- **Speed and threads:** magic bitboards and profiled inlining make the search about 1.65x faster than before Stage 20 (same nodes, measured); Lazy SMP
+  (`setoption name Threads value N`) runs helper threads that share the transposition table.
 - **Tools:** an interactive `play` program, `perft_cli`, benchmarks, a tactical-suite runner (`tactics`), a self-play
   match tool (`selfplay`), and one test program per stage.
 
@@ -70,6 +72,7 @@ Supported: `uci`, `isready`, `ucinewgame`, `position`, `go` (`depth`, `nodes`, `
 |---|---|---|
 | `Hash` | 16 | transposition table size in MB (1 to 4096) |
 | `Clear Hash` | | empty the table |
+| `Threads` | 1 | Lazy SMP search threads (1 to 64); helpers share the transposition table. Try 2 or more on a multi-core CPU |
 | `Move Overhead` | 30 | milliseconds kept back for GUI and pipe delays |
 | `Techniques` | `default` | search techniques, e.g. `none`, `pvs,null`, `default,-lmr` |
 | `EvalFeatures` | `default` | evaluation features, e.g. `none`, `taper,passed`, `all,-space` |
@@ -171,6 +174,7 @@ ctest -R Stage9PerftTests --output-on-failure  # same test through CTest
 | 17 | `./test_stage17` | `Stage17AdvancedSearchTests` | Each search technique: options-off equals Stage 16, PVS / SEE ordering / aspiration keep the score, SEE against an exhaustive reference, null move, repetition, mates, tactics (`./test_stage17 see null` runs named sections) | ~100 s |
 | 18 | `./test_stage18` | `Stage18EvaluationTests` | Tapered evaluation and each feature: no features equals a frozen Stage 10 copy, colour / mirror symmetry, features change only their own term, hand-computed values, search still sound (`./test_stage18 terms phase` runs named sections) | ~11 s |
 | 19 | `./test_stage19` | `Stage19UciTests` | UCI front end: `go` parsing, the time-allocation rule, `position` handling (castling, en passant, promotion, illegal input), `go` with every limit, `stop` / `quit` / end of input, options, `perft` / `bench`, thousands of garbage lines (`./test_stage19 search options` runs named sections) | ~4 s |
+| 20 | `./test_stage20` | `Stage20PerformanceSmpTests` | Magic bitboards against an independent ray-walk (every occupancy subset), attack tables, perft pins, make/unmake invariants, lock-free table under a 4-thread hammer, Lazy SMP (legal moves, mates, stop, node sums), the `Threads` option (`./test_stage20 magic smp` runs named sections) | ~10 s |
 | - | `./test_regression` | `RegressionTests` | Bugs found in earlier audits, cross-checked against python-chess | <1 s |
 
 \*Approximate, on a Linux build; your machine may differ. A passing program ends with no `FAIL:` lines and exits
@@ -180,7 +184,8 @@ The UCI engine can also be checked from outside with python-chess, which plays w
 `matex` program, the way a GUI would (needs `pip install chess`; not part of CTest):
 
 ```bash
-py tests\uci_check.py build\matex.exe
+python3 tests/uci_check.py build/matex          # Linux / macOS, from the project folder
+py tests\uci_check.py build\matex.exe          # Windows, from the project folder
 ```
 
 ### Run groups of stages
@@ -245,7 +250,7 @@ docs/       roadmap, rule checklist, detailed stage notes
 | 17 | Advanced search (PVS, null move, LMR, pruning, SEE, ...) | Done |
 | 18 | Advanced evaluation (tapering and nine features) | Done |
 | 19 | UCI protocol and engine infrastructure | Done |
-| 20 | Final strength work | Planned |
+| 20 | Performance (magic bitboards, profiling) and Lazy SMP | Done (NNUE, Syzygy not done) |
 
 ## Design in brief
 
@@ -263,7 +268,7 @@ correctness is in [docs/RULE_CHECKLIST.md](docs/RULE_CHECKLIST.md).
 - Search techniques and evaluation features were tuned by short self-play matches; single features are often within
   the measurement noise (about +-40 Elo per 200 games), so some choices are "not shown to hurt", not "proven to help".
 - The halfmove clock is not part of the hash key (the 50-move rule depends on the path, as in other engines).
-- No pondering, no multi-threaded search, no opening book or endgame tablebases; a single search thread plus the thread that reads commands.
+- No pondering, no opening book, no NNUE, no endgame tablebases. Lazy SMP exists but its strength gain has not been measured with matches. The build uses POPCNT on x86-64 (`-DMATEX_POPCNT=OFF` for very old CPUs).
 
 ## Contributing
 

@@ -19,36 +19,6 @@ void Position::clear() {
     fullmoveNumber_ = 1;
 }
 
-void Position::putPiece(Piece p, int sq) {
-    // NO_PIECE (12) is not a valid index into pieceBB_/occupancyByColor_; placing "no piece"
-    // means emptying the square. (Audit fix: this used to write out of bounds.)
-    if (p == NO_PIECE) {
-        removePiece(sq);
-        return;
-    }
-    // Defensive: if a piece already sits here, remove it first so the
-    // bitboards/mailbox never get out of sync.
-    if (board_[sq] != NO_PIECE) {
-        removePiece(sq);
-    }
-    board_[sq] = p;
-    setBit(pieceBB_[p], sq);
-    // Incremental occupancy update (Stage 7): touch one bit instead of rebuilding.
-    setBit(occupancyByColor_[colorOf(p)], sq);
-    setBit(occupancyAll_, sq);
-    baseKey_ ^= zobrist::KEYS.piece[p][sq];
-}
-
-void Position::removePiece(int sq) {
-    Piece p = board_[sq];
-    if (p == NO_PIECE) return;
-    board_[sq] = NO_PIECE;
-    clearBit(pieceBB_[p], sq);
-    clearBit(occupancyByColor_[colorOf(p)], sq);
-    clearBit(occupancyAll_, sq);
-    baseKey_ ^= zobrist::KEYS.piece[p][sq];
-}
-
 void Position::setStartingPosition() {
     clear();
 
@@ -129,4 +99,4 @@ bool Position::isConsistent() const {
     if (baseKey_ != recomputeBaseKey(*this)) return false;  // incremental Zobrist key must match a full recompute
 
     return true;
-}
+}

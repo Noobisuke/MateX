@@ -1,6 +1,7 @@
 #pragma once
 #include "../board/position.hpp"
 #include "../move/move.hpp"
+#include <array>
 
 // ---------------------------------------------------------------------
 // Special rules (Stage 6)
@@ -25,7 +26,25 @@ bool castlingPathSafe(const Position& pos, const Move& move);
 // king moves/castles, a rook leaves its corner, or anything lands on a
 // rook's corner (rook captured, including by a promoting pawn).
 // Rights are tracked explicitly, never inferred from piece placement.
-CastlingRights castlingRightsAfter(CastlingRights rights, const Move& move);
+// Inline since Stage 20 (called on every make): one table lookup per square.
+namespace special_detail {
+constexpr std::array<unsigned char, 64> makeRightsLost() {
+    std::array<unsigned char, 64> t{};
+    t[E1] = WHITE_KINGSIDE | WHITE_QUEENSIDE;
+    t[A1] = WHITE_QUEENSIDE;
+    t[H1] = WHITE_KINGSIDE;
+    t[E8] = BLACK_KINGSIDE | BLACK_QUEENSIDE;
+    t[A8] = BLACK_QUEENSIDE;
+    t[H8] = BLACK_KINGSIDE;
+    return t;
+}
+inline constexpr std::array<unsigned char, 64> RIGHTS_LOST = makeRightsLost();  // rights lost when a move touches this square
+}  // namespace special_detail
+
+inline CastlingRights castlingRightsAfter(CastlingRights rights, const Move& move) {
+    const int lost = special_detail::RIGHTS_LOST[move.from] | special_detail::RIGHTS_LOST[move.to];
+    return static_cast<CastlingRights>(rights & ~lost);
+}
 
 // Castling rights that can really still be exercised structurally: the stored right AND the
 // king on e1/e8 AND the rook on its corner. Stored rights may be stale for positions loaded

@@ -23,13 +23,7 @@
 #include <string>
 #include <vector>
 
-// Is std::thread usable? libstdc++ without gthreads (a MinGW "win32 threads" build) declares neither std::thread nor
-// std::mutex, so detect that and fall back to a single-threaded engine.
-#if defined(MATEX_NO_THREADS) || (defined(__GLIBCXX__) && !defined(_GLIBCXX_HAS_GTHREADS))
-#define MATEX_THREADS 0
-#else
-#define MATEX_THREADS 1
-#endif
+#include "../search/threads.hpp"
 
 #if MATEX_THREADS
 #include <mutex>
@@ -71,6 +65,7 @@ public:
     const std::vector<uint64_t>& history() const { return history_; }
     int hashMB() const { return hashMB_; }
     int moveOverhead() const { return moveOverhead_; }
+    int threads() const { return threads_; }
     bool debug() const { return debug_; }
     static bool threadsAvailable();
 
@@ -102,6 +97,7 @@ private:
     SearchOptions searchOptions_;
     int hashMB_ = 16;
     int moveOverhead_ = 30;
+    int threads_ = 1;  // Stage 20: Lazy SMP search threads (UCI option "Threads")
     bool debug_ = false;
 
     std::atomic<bool> stop_{false};

@@ -153,7 +153,7 @@ bool UciEngine::handleLine(const std::string& raw) {
         if (cmd == "bench") { cmdBench(args); return true; }
         if (cmd == "options") {
             emit("search techniques: " + searchOptions_.toString() + "; evaluation features: " + evalFlagsToString(evalFlags()) +
-                 "; hash " + std::to_string(hashMB_) + " MB; move overhead " + std::to_string(moveOverhead_) + " ms; threads " +
+                 "; hash " + std::to_string(hashMB_) + " MB; threads " + std::to_string(threads_) + "; move overhead " + std::to_string(moveOverhead_) + " ms; thread support " +
                  (threadsAvailable() ? "yes" : "no"));
             return true;
         }
@@ -177,6 +177,7 @@ void UciEngine::cmdUci() {
     emit("id author MateX contributors");
     emit("option name Hash type spin default 16 min 1 max 4096");
     emit("option name Clear Hash type button");
+    emit(std::string("option name Threads type spin default 1 min 1 max ") + (threadsAvailable() ? "64" : "1"));
     emit("option name Move Overhead type spin default 30 min 0 max 5000");
     emit("option name Techniques type string default default");
     emit("option name EvalFeatures type string default default");
@@ -279,6 +280,7 @@ void UciEngine::searchTask(GoParams go, Position pos, std::vector<uint64_t> hist
     lim.maxNodes = go.nodes;
     lim.stop = &stop_;
     lim.tt = &tt_;
+    lim.threads = threads_;
     lim.options = opts;
     lim.history = std::move(history);
 
@@ -342,6 +344,11 @@ void UciEngine::cmdSetOption(const std::vector<std::string>& t) {
     } else if (name == "clear hash") {
         stopAndJoin();
         tt_.clear();
+    } else if (name == "threads") {
+        long long v;
+        if (!spin(1, threadsAvailable() ? 64 : 1, v)) return;
+        stopAndJoin();
+        threads_ = static_cast<int>(v);
     } else if (name == "move overhead") {
         long long v;
         if (!spin(0, 5000, v)) return;
